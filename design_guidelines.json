@@ -1,0 +1,77 @@
+{
+  "theme_strategy": "Light Theme (Swiss Brutalist / High-Contrast). Conveys authority, precision, and deliverability. Focuses on data clarity over decorative fluff.",
+  "typography": {
+    "headings": {
+      "family": "Chivo, sans-serif",
+      "weights": ["400", "700", "900"],
+      "usage": "Page titles, hero metrics, card titles. Use tracking-tight for all headings."
+    },
+    "body": {
+      "family": "IBM Plex Sans, sans-serif",
+      "weights": ["400", "500", "600"],
+      "usage": "Standard text, descriptions, table data."
+    },
+    "mono": {
+      "family": "JetBrains Mono, monospace",
+      "weights": ["400"],
+      "usage": "SMTP settings, DKIM/SPF/DMARC records, code snippets, dynamic variables."
+    }
+  },
+  "colors": {
+    "background": "#F9FAFB",
+    "surface": "#FFFFFF",
+    "text_primary": "#0A0A0A",
+    "text_secondary": "#52525B",
+    "accent_primary": "#0055FF",
+    "accent_hover": "#0044CC",
+    "border": "#E4E4E7",
+    "status": {
+      "success": "#10B981",
+      "error": "#EF4444",
+      "warning": "#F59E0B",
+      "info": "#3B82F6"
+    }
+  },
+  "layouts": {
+    "dashboard": "Bento High Density Grid. grid-cols-1 md:grid-cols-3 lg:grid-cols-4. gap-4 or gap-6. Top-left hero metric (e.g. Reply Rate or Meetings Booked). Activity, Engagement, and Delivery breakdowns.",
+    "spacing": "Dense but legible. Internal padding p-4 or p-6 for cards. Consistent 24px/32px gaps between major sections.",
+    "cards": "Flat background, 1px subtle border (border-gray-200), NO shadow by default. Sharp corners or max rounded-md (6px radius)."
+  },
+  "components": {
+    "strategy": "Use Shadcn UI extensively. Override default soft radius to rounded-md. Remove heavy drop shadows. Focus on 1px borders and high contrast.",
+    "buttons": "Sharp or slightly rounded. Primary: bg-[#0055FF] text-white hover:bg-[#0044CC]. Secondary: outline, border-[#E4E4E7] text-[#0A0A0A] hover:bg-gray-50.",
+    "tables": "Dense rows. Right-align numeric columns. Use distinct badges for status (Sent, Opened, Bounced, Scheduled).",
+    "charts": "Recharts or Shadcn charts. Use the primary accent color and status colors. Minimal grid lines. Ensure tooltips are high contrast.",
+    "forms": "Inputs with 1px border, stark focus rings (focus:ring-2 focus:ring-[#0055FF])."
+  },
+  "motion": {
+    "strategy": "Minimal, functional. Fast transitions (150ms). Focus rings and hover states only. No bouncy entry animations. Keep it professional and snappy."
+  },
+  "media": {
+    "images": [
+      {
+        "url": "https://images.pexels.com/photos/16615599/pexels-photo-16615599.jpeg",
+        "description": "Sleek modern architecture in bright sunlight",
+        "category": "login_background",
+        "placement_instructions": "Use as a split-screen background for the Login page. Cover, object-center."
+      },
+      {
+        "url": "https://images.pexels.com/photos/36352473/pexels-photo-36352473.jpeg",
+        "description": "Black and white abstract paper",
+        "category": "empty_state",
+        "placement_instructions": "Use as a small illustration for empty states (e.g., No Contacts, No Campaigns yet) to add a touch of artful minimalism."
+      }
+    ],
+    "icons": "lucide-react. Use 16px to 20px sizes for dense UI."
+  },
+  "general_ui_ux_guidelines": [
+    "Always use data-testid on all interactive elements (buttons, inputs, links, tabs) for robust automated testing.",
+    "Left-align text, right-align numbers in tables.",
+    "Never use transparent backgrounds for dropdowns, modals, or sticky headers; always use solid background with a border.",
+    "Ensure minimum 4.5:1 contrast ratio for all text.",
+    "Provide clear feedback (using sonner toast) on all CRUD operations (create, update, delete).",
+    "App UI Language is Portuguese. Ensure all menus (Dashboard, Contactos, Grupos, Templates, Campanhas, SMTP, Estatísticas, Configurações) and labels are correctly translated.",
+    "Build the application using .js files as instructed, not .tsx."
+  ],
+  "instructions_to_main_agent": "Initialize standard Shadcn components. Create layout wrappers. Override global CSS variables in index.css to match the specified Swiss Brutalist color palette and border-radius rules. Add Google Fonts (Chivo, IBM Plex Sans, JetBrains Mono) to the HTML head and map them in tailwind.config.js. Construct the dashboard progressively focusing on metric scanning and data clarity. Build out the email campaign flow wizard step-by-step."
+}
