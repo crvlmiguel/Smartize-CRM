@@ -20,13 +20,19 @@ Fluxo: SMTP → Contactos → Grupos → Template → Campanha → Enviar/Agenda
 - Contactos: CRUD, pesquisa, filtros (grupo/estado), importar CSV/Excel com dedupe e validação.
 - Grupos: CRUD com contagem de contactos.
 - Templates: editor HTML/Texto, inserir variáveis dinâmicas, preview, duplicar, eliminar.
-- SMTP: CRUD, testar ligação, password encriptada (Fernet), limite diário.
-- Campanhas: wizard 3 passos (config/velocidade/envio), iniciar/agendar/duplicar/cancelar/arquivar/eliminar.
-- Envio real via SMTP com fila (APScheduler, atrasos aleatórios, horário comercial, limite diário, bounce auto).
+- Contas de Email (em Configurações → Contas de Email): tipos SMTP Personalizado e Google Workspace/Gmail; testar ligação; enviar email de teste; password/IMAP encriptadas (Fernet); limite diário; conta predefinida; desligar; assinatura HTML por conta (editor WYSIWYG + código + preview); Reply-To; IMAP opcional; preset Hostinger; Google pré-configura smtp.gmail.com (OAuth "em breve", usa App Password).
+- Campanhas: wizard 3 passos, iniciar/agendar/duplicar/cancelar/arquivar/eliminar; usa conta predefinida quando não indicada.
+- Envio real via SMTP com fila (APScheduler, atrasos aleatórios, horário comercial, limite diário, bounce auto); assinatura da conta anexada automaticamente.
 - Tracking: pixel de abertura + redirect de cliques (verificado E2E).
 - Estatísticas por campanha (taxas) + detalhe com destinatários e marcar "respondeu".
-- Configurações (empresa, logo, idioma, timezone, assinatura, rodapé). Deliverability (SPF/DKIM/DMARC + boas práticas).
-- Testado: 31/31 testes backend, fluxos frontend core OK.
+- Configurações com separadores Geral (empresa, upload de logótipo base64, idioma, timezone, rodapé) e Contas de Email.
+- Identidade visual Smartize: logótipo (upload dinâmico via /api/public/branding) em Login, sidebar, rodapé, loading e 404; favicon; logo nos emails de teste.
+- Testado: iteração 1 (31/31), iteração 2 (38/38), iteração 3 (46/46) backend + fluxos frontend verdes.
+
+## Removido
+- Módulo Deliverability (menu, página, rotas) — removido da UI.
+- Menu SMTP autónomo (movido para Configurações → Contas de Email; /smtp e /deliverability redirecionam para /configuracoes).
+- "Assinatura padrão" das Configurações Gerais (assinaturas agora só por conta).
 
 ## Backlog / Próximos passos
 - **P1**: Paginação em /contacts; validar 404 em cancel/archive/delete/reply de campanha inexistente; agregação para dashboard daily (perf).

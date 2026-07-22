@@ -637,6 +637,8 @@ async def get_settings(user=Depends(get_current_user)):
 @api.put("/settings")
 async def update_settings(payload: SettingsUpdate, user=Depends(get_current_user)):
     updates = {k: v for k, v in payload.model_dump(exclude_none=True).items()}
+    if updates.get("logo_url") and len(updates["logo_url"]) > 2_800_000:
+        raise HTTPException(status_code=400, detail="Logótipo demasiado grande (máx. ~2MB)")
     await db.settings.update_one({"key": "global"}, {"$set": updates}, upsert=True)
     doc = await db.settings.find_one({"key": "global"})
     doc.pop("_id", None)
