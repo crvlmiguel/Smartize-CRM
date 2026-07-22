@@ -42,7 +42,20 @@ def substitute(text: str, variables: dict) -> str:
     def repl(match):
         key = match.group(1).strip()
         return str(variables.get(key, match.group(0)))
-    return re.sub(r"\{([a-zA-Z0-9_]+)\}", repl, text)
+    # Supports both {var} and {{var}} syntaxes.
+    return re.sub(r"\{\{?\s*([a-zA-Z0-9_]+)\s*\}?\}", repl, text)
+
+
+def html_to_text(html: str) -> str:
+    if not html:
+        return ""
+    text = re.sub(r"(?i)<br\s*/?>", "\n", html)
+    text = re.sub(r"(?i)</p>", "\n\n", text)
+    text = re.sub(r"<[^>]+>", "", text)
+    text = re.sub(r"&nbsp;", " ", text)
+    text = re.sub(r"&amp;", "&", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 
 def rewrite_links(html: str, base_url: str, tracking_id: str) -> str:
@@ -59,7 +72,9 @@ def rewrite_links(html: str, base_url: str, tracking_id: str) -> str:
 
 
 def inject_open_pixel(html: str, base_url: str, tracking_id: str) -> str:
-    pixel = f'<img src="{base_url}/api/track/open/{tracking_id}.png" width="1" height="1" alt="" style="display:none" />'
+    # No display:none — hidden images are often skipped by mail clients,
+    # which prevents open tracking from firing. Use a tiny 1x1 image instead.
+    pixel = f'<img src="{base_url}/api/track/open/{tracking_id}.png?t=1" width="1" height="1" border="0" alt="" style="width:1px;height:1px;border:0;margin:0;padding:0;" />'
     if "</body>" in html.lower():
         idx = html.lower().rfind("</body>")
         return html[:idx] + pixel + html[idx:]

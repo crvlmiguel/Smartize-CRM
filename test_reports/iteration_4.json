@@ -1,0 +1,39 @@
+{
+  "summary": "Iteration 4 validated end-to-end. Backend: 9/9 new pytest cases in test_iter4.py pass (variables {var}+{{var}}; scheduler picks jobs and increments attempts on transient SMTP errors; recipient stats include open_count/click_count/attempts; /api/track/open/{tid}.png without auth returns image/png, sets status=opened, sets opened_at, increments open_count, preserves opened_at on subsequent hits; /api/track/click/{tid}?url=… returns 307 to target URL, sets status=clicked, clicked_at and click_count; signature_html persists on smtp; /smtp/test-send works with signature override). Regression: existing backend_test.py 46/46 pass (serial). Frontend: Templates → Novo template: all RTE toolbar testids present (rte-bold/italic/underline/font/size/color/highlight/ul/ol/left/center/right/justify/link/image/variable), tabs (rte-tab-visual/code/preview) switch correctly, rte-editor content propagates to rte-html-input and rte-preview, rte-variable dropdown inserts {first_name} into HTML, save-template-button persists content_html, delete + confirm works.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Template dialog + delete alert", "issues": ["A11y warning: DialogContent/AlertDialogContent missing Description/aria-describedby — non-blocking, cosmetic."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter4.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/iter4_results.xml"
+  ],
+  "action_items": [
+    "Optional: add aria-describedby (or a <DialogDescription>) to Template dialog and confirm-delete AlertDialog to remove Radix a11y warnings.",
+    "Optional: expose tracking_id on GET /api/campaigns/{id}/stats recipients so external clients (and easier testing) can trigger open/click endpoints without direct DB access.",
+    "Optional: campaign settings only accept nested `settings` object; top-level min_interval_seconds/business_hour_* on POST /api/campaigns are silently dropped by Pydantic. Consider explicit 422 or a compat shim."
+  ],
+  "critical_code_review_comments": [
+    "worker._send_job: signature is appended to html_body AND converted to text via html_to_text — good; also falls back to legacy plain-text `signature` field.",
+    "email_service.inject_open_pixel: uses 1x1 img without display:none — correct for tracking (many clients strip hidden images).",
+    "api.track_open: only promotes status when currently in OPEN_TRACKED_STATUSES (sent/delivered/sending/pending) — will NOT downgrade replied/bounced/failed. Good.",
+    "api.track_click: same protection + also sets opened_at if missing — good.",
+    "worker._send_job retry: transient errors reset status to 'pending', increment attempts, backoff = 60*attempts seconds, up to max_attempts=3, then 'failed'. Permanent bounces (regex on 550/551/553/5.1.x/mailbox…) go to 'bounced' immediately and mark contact.status='bounce'. Correct.",
+    "core: /api/track/* correctly registered without auth dependency."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter4.py"
+  ],
+  "success_rate": { "backend": "100% (9/9 new + 46/46 regression)", "frontend": "100% on iteration 4 RTE flow" },
+  "test_credentials": "miguel.carvalho@smartize.pt / 100%Smartize",
+  "seed_data_creation": "test_iter4.py creates TEST_iter4_smtp/grp/template/contact/campaign and cleans up on teardown. UI test created and deleted TEST_ui_iter4_tpl.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_iter4.py must be run serially (`-n 0`) OR isolated per-worker because its module-scoped `seed` fixture inserts a contact with a fixed email. backend_test.py also has the same cross-class dependency and must be run with `-n 0` (the default -n 2 loadscope splits by CLASS and breaks TestGroups._created['id'] sharing). Consider consolidating in future. /api/track/* are unauth. Real SMTP is unreachable in the preview env, so job transitions to 'sent' are simulated in tests by directly writing status='sent' via pymongo before hitting the tracking endpoint.",
+  "rca of the issue": "N/A — no blocking bugs found."
+}

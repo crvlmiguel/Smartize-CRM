@@ -86,7 +86,7 @@ export default function CampaignDetail() {
               <TableHead>Email</TableHead>
               <TableHead>Estado</TableHead>
               <TableHead>Enviado</TableHead>
-              <TableHead>Aberto</TableHead>
+              <TableHead>Aberturas</TableHead>
               <TableHead>Clique</TableHead>
               <TableHead className="text-right">Ações</TableHead>
             </TableRow>
@@ -98,8 +98,8 @@ export default function CampaignDetail() {
                 <TableCell className="font-mono text-xs">{r.email}</TableCell>
                 <TableCell>{r.replied ? <StatusBadge status="respondido" /> : <StatusBadge status={r.status} />}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">{r.sent_at ? new Date(r.sent_at).toLocaleString("pt-PT") : "—"}</TableCell>
-                <TableCell>{r.opened_at ? "✓" : "—"}</TableCell>
-                <TableCell>{r.clicked_at ? "✓" : "—"}</TableCell>
+                <TableCell>{r.opened_at ? <span className="text-amber-600 font-medium" title={`Última: ${new Date(r.last_opened_at || r.opened_at).toLocaleString("pt-PT")}`}>{r.open_count || 1}× </span> : "—"}</TableCell>
+                <TableCell>{r.clicked_at ? <span className="text-violet-600 font-medium">{r.click_count || 1}×</span> : "—"}</TableCell>
                 <TableCell className="text-right">
                   {!r.replied && (
                     <Button variant="outline" size="sm" onClick={() => markReplied(r.contact_id)} data-testid={`mark-replied-${r.job_id}`}>

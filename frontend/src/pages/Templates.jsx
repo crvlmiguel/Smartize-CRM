@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -18,6 +17,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import api, { apiError } from "@/lib/api";
 import { PageHeader, EmptyState } from "@/components/common";
+import { RichTextEditor } from "@/components/RichTextEditor";
 
 const VARIABLES = [
   "first_name", "last_name", "full_name", "company", "position",
@@ -32,12 +32,9 @@ export default function Templates() {
   const [form, setForm] = useState(EMPTY);
   const [toDelete, setToDelete] = useState(null);
   const [preview, setPreview] = useState(null);
-  const [activeField, setActiveField] = useState("content_html");
+  const [activeField, setActiveField] = useState("subject");
 
   const subjectRef = useRef(null);
-  const htmlRef = useRef(null);
-  const textRef = useRef(null);
-  const refs = { subject: subjectRef, content_html: htmlRef, content_text: textRef };
 
   const load = () => api.get("/templates").then((r) => setTemplates(r.data)).catch(() => {});
   useEffect(() => { load(); }, []);
@@ -45,16 +42,15 @@ export default function Templates() {
   const openNew = () => { setEditing(null); setForm(EMPTY); setOpen(true); };
   const openEdit = (t) => { setEditing(t); setForm({ name: t.name, subject: t.subject, content_html: t.content_html, content_text: t.content_text }); setOpen(true); };
 
-  const insertVariable = (v) => {
-    const key = activeField;
-    const el = refs[key]?.current;
+  const insertSubjectVariable = (v) => {
+    const el = subjectRef.current;
     const token = `{${v}}`;
-    if (!el) { setForm((f) => ({ ...f, [key]: (f[key] || "") + token })); return; }
-    const start = el.selectionStart ?? (form[key] || "").length;
+    if (!el) { setForm((f) => ({ ...f, subject: (f.subject || "") + token })); return; }
+    const start = el.selectionStart ?? (form.subject || "").length;
     const end = el.selectionEnd ?? start;
-    const val = form[key] || "";
+    const val = form.subject || "";
     const next = val.slice(0, start) + token + val.slice(end);
-    setForm((f) => ({ ...f, [key]: next }));
+    setForm((f) => ({ ...f, subject: next }));
     setTimeout(() => { el.focus(); el.selectionStart = el.selectionEnd = start + token.length; }, 0);
   };
 
@@ -135,29 +131,24 @@ export default function Templates() {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="max-h-72 overflow-y-auto">
                   {VARIABLES.map((v) => (
-                    <DropdownMenuItem key={v} onClick={() => insertVariable(v)} data-testid={`variable-${v}`} className="font-mono text-xs">{`{${v}}`}</DropdownMenuItem>
+                    <DropdownMenuItem key={v} onClick={() => insertSubjectVariable(v)} data-testid={`variable-${v}`} className="font-mono text-xs">{`{${v}}`}</DropdownMenuItem>
                   ))}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
-            <Tabs defaultValue="html">
-              <TabsList>
-                <TabsTrigger value="html" data-testid="tab-html">Editor HTML</TabsTrigger>
-                <TabsTrigger value="text" data-testid="tab-text">Editor Texto</TabsTrigger>
-              </TabsList>
-              <TabsContent value="html">
-                <Textarea ref={htmlRef} value={form.content_html} rows={10} data-testid="template-html-input"
-                  onFocus={() => setActiveField("content_html")}
-                  onChange={(e) => setForm({ ...form, content_html: e.target.value })}
-                  className="font-mono text-sm" placeholder="<p>Olá {first_name},</p>" />
-              </TabsContent>
-              <TabsContent value="text">
-                <Textarea ref={textRef} value={form.content_text} rows={10} data-testid="template-text-input"
-                  onFocus={() => setActiveField("content_text")}
-                  onChange={(e) => setForm({ ...form, content_text: e.target.value })}
-                  placeholder="Olá {first_name}," />
-              </TabsContent>
-            </Tabs>
+            <div>
+              <Label>Conteúdo do email</Label>
+              <div className="mt-1.5">
+                <RichTextEditor value={form.content_html} onChange={(v) => setForm((f) => ({ ...f, content_html: v }))} />
+              </div>
+            </div>
+            <details className="border border-border rounded-md p-3">
+              <summary className="text-sm font-medium cursor-pointer">Versão texto simples (opcional)</summary>
+              <Textarea value={form.content_text} rows={5} data-testid="template-text-input"
+                onChange={(e) => setForm({ ...form, content_text: e.target.value })}
+                className="mt-3" placeholder="Olá {first_name}," />
+              <p className="text-xs text-muted-foreground mt-1.5">Usada por clientes que não suportam HTML. Se vazia, é gerada automaticamente a partir do HTML.</p>
+            </details>
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={doPreview} data-testid="preview-template-button"><Eye size={16} className="mr-1.5" /> Preview</Button>

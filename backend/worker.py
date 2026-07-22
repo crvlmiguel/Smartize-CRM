@@ -9,7 +9,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from core import db, now_utc
 from email_service import (
-    build_variable_map, substitute, rewrite_links, inject_open_pixel, send_email,
+    build_variable_map, substitute, rewrite_links, inject_open_pixel, send_email, html_to_text,
 )
 
 logger = logging.getLogger("worker")
@@ -72,6 +72,11 @@ async def build_campaign_jobs(campaign: dict, contacts: list) -> int:
             "sent_at": None,
             "opened_at": None,
             "clicked_at": None,
+            "last_opened_at": None,
+            "open_count": 0,
+            "click_count": 0,
+            "attempts": 0,
+            "max_attempts": 3,
             "error": None,
         }
         await db.email_jobs.insert_one(job)
@@ -142,35 +147,62 @@ async def _send_job(campaign: dict, job: dict, smtp: dict):
     text_body = substitute(template.get("content_text", ""), variables)
     html_body = substitute(template.get("content_html", ""), variables)
 
-    signature_html = smtp.get("signature_html", "")
+    # Signature from account (with legacy fallback for pre-refactor plain-text field).
+    signature_html = smtp.get("signature_html") or ""
+    if not signature_html and smtp.get("signature"):
+        signature_html = smtp.get("signature").replace("\n", "<br/>")
     if signature_html:
         signature_html = substitute(signature_html, variables)
         if not html_body:
             html_body = substitute(template.get("content_text", ""), variables).replace("\n", "<br/>")
         html_body = html_body + f'<br/><br/><div class="email-signature">{signature_html}</div>'
+        text_body = (text_body or "") + "\n\n" + html_to_text(signature_html)
 
     tracking_id = job["tracking_id"]
     if html_body:
         html_body = rewrite_links(html_body, BASE_URL, tracking_id)
         html_body = inject_open_pixel(html_body, BASE_URL, tracking_id)
 
+    await db.email_jobs.update_one({"_id": job["_id"]}, {"$set": {"status": "sending"}})
     try:
         message_id = await send_email(smtp, job["to_email"], subject, html_body, text_body)
         await db.email_jobs.update_one({"_id": job["_id"]}, {"$set": {
             "status": "sent",
             "sent_at": now_utc().isoformat(),
             "message_id": message_id,
+            "error": None,
         }})
         await db.contacts.update_one({"_id": contact["_id"]}, {"$set": {"last_activity": now_utc().isoformat()}})
+        logger.info("Email enviado: job=%s to=%s", str(job["_id"]), job["to_email"])
     except Exception as e:
         err = str(e)
-        await db.email_jobs.update_one({"_id": job["_id"]}, {"$set": {
-            "status": "failed", "error": err, "sent_at": now_utc().isoformat(),
-        }})
         low = err.lower()
-        if any(k in low for k in ["mailbox", "does not exist", "user unknown", "550", "recipient", "no such"]):
-            await db.email_jobs.update_one({"_id": job["_id"]}, {"$set": {"status": "bounced"}})
+        attempts = job.get("attempts", 0) + 1
+        max_attempts = job.get("max_attempts", 3)
+        permanent = any(k in low for k in [
+            "mailbox", "does not exist", "user unknown", "no such", "recipient address rejected",
+            "550", "551", "553", "5.1.1", "5.1.0", "invalid recipient",
+        ])
+        if permanent:
+            await db.email_jobs.update_one({"_id": job["_id"]}, {"$set": {
+                "status": "bounced", "error": err, "attempts": attempts,
+                "sent_at": now_utc().isoformat(),
+            }})
             await db.contacts.update_one({"_id": contact["_id"]}, {"$set": {"status": "bounce"}})
+            logger.warning("Bounce: job=%s to=%s err=%s", str(job["_id"]), job["to_email"], err)
+        elif attempts < max_attempts:
+            backoff = timedelta(seconds=60 * attempts)
+            await db.email_jobs.update_one({"_id": job["_id"]}, {"$set": {
+                "status": "pending", "error": f"Tentativa {attempts}/{max_attempts}: {err}",
+                "attempts": attempts, "scheduled_at": (now_utc() + backoff).isoformat(),
+            }})
+            logger.warning("Retry agendado: job=%s attempt=%s err=%s", str(job["_id"]), attempts, err)
+        else:
+            await db.email_jobs.update_one({"_id": job["_id"]}, {"$set": {
+                "status": "failed", "error": err, "attempts": attempts,
+                "sent_at": now_utc().isoformat(),
+            }})
+            logger.error("Falha definitiva: job=%s to=%s err=%s", str(job["_id"]), job["to_email"], err)
 
 
 def start_scheduler():

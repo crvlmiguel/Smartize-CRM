@@ -560,7 +560,11 @@ async def campaign_stats(campaign_id: str, user=Depends(get_current_user)):
             "status": j.get("status"),
             "sent_at": j.get("sent_at"),
             "opened_at": j.get("opened_at"),
+            "last_opened_at": j.get("last_opened_at"),
+            "open_count": j.get("open_count", 0),
             "clicked_at": j.get("clicked_at"),
+            "click_count": j.get("click_count", 0),
+            "attempts": j.get("attempts", 0),
             "replied": j.get("replied", False),
             "error": j.get("error"),
         })
@@ -693,22 +697,45 @@ async def public_branding():
 
 
 # ==================== TRACKING (no auth) ====================
+OPEN_TRACKED_STATUSES = ["sent", "delivered", "sending", "pending"]
+
+
 @api.get("/track/open/{tracking_id}.png")
 async def track_open(tracking_id: str):
     job = await db.email_jobs.find_one({"tracking_id": tracking_id})
-    if job and not job.get("opened_at"):
-        await db.email_jobs.update_one({"_id": job["_id"]}, {"$set": {"opened_at": now_utc().isoformat()}})
+    if job:
+        now = now_utc().isoformat()
+        set_fields = {"last_opened_at": now}
+        if not job.get("opened_at"):
+            set_fields["opened_at"] = now
+        # Advance status to "opened" but never downgrade clicked/replied/bounced.
+        if job.get("status") in OPEN_TRACKED_STATUSES:
+            set_fields["status"] = "opened"
+        await db.email_jobs.update_one(
+            {"_id": job["_id"]},
+            {"$set": set_fields, "$inc": {"open_count": 1}},
+        )
         if job.get("contact_id"):
-            await db.contacts.update_one({"_id": _oid(job["contact_id"])}, {"$set": {"last_activity": now_utc().isoformat()}})
-    return Response(content=PIXEL, media_type="image/png", headers={"Cache-Control": "no-store"})
+            await db.contacts.update_one({"_id": _oid(job["contact_id"])}, {"$set": {"last_activity": now}})
+    return Response(content=PIXEL, media_type="image/png", headers={
+        "Cache-Control": "no-store, no-cache, must-revalidate, private",
+        "Pragma": "no-cache", "Expires": "0",
+    })
 
 
 @api.get("/track/click/{tracking_id}")
 async def track_click(tracking_id: str, url: str = Query(...)):
     job = await db.email_jobs.find_one({"tracking_id": tracking_id})
     if job:
-        upd = {"clicked_at": now_utc().isoformat()}
+        now = now_utc().isoformat()
+        set_fields = {"clicked_at": now, "last_opened_at": now}
+        inc = {"click_count": 1}
         if not job.get("opened_at"):
-            upd["opened_at"] = now_utc().isoformat()
-        await db.email_jobs.update_one({"_id": job["_id"]}, {"$set": upd})
+            set_fields["opened_at"] = now
+            inc["open_count"] = 1
+        if job.get("status") in OPEN_TRACKED_STATUSES + ["opened"]:
+            set_fields["status"] = "clicked"
+        await db.email_jobs.update_one({"_id": job["_id"]}, {"$set": set_fields, "$inc": inc})
+        if job.get("contact_id"):
+            await db.contacts.update_one({"_id": _oid(job["contact_id"])}, {"$set": {"last_activity": now}})
     return RedirectResponse(url=url)
