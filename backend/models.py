@@ -84,7 +84,8 @@ class SmtpCreate(BaseModel):
     use_tls: bool = True
     username: str
     password: str = ""
-    signature: str = ""
+    reply_to: Optional[str] = None
+    signature_html: str = ""
     daily_limit: int = 200
     status: str = "ativo"
 
@@ -99,7 +100,8 @@ class SmtpUpdate(BaseModel):
     use_tls: Optional[bool] = None
     username: Optional[str] = None
     password: Optional[str] = None
-    signature: Optional[str] = None
+    reply_to: Optional[str] = None
+    signature_html: Optional[str] = None
     daily_limit: Optional[int] = None
     status: Optional[str] = None
 
@@ -151,5 +153,11 @@ class SettingsUpdate(BaseModel):
     logo_url: Optional[str] = None
     language: Optional[str] = None
     timezone: Optional[str] = None
-    default_signature: Optional[str] = None
     footer: Optional[str] = None
+
+
+# ---------------- SMTP test send ----------------
+class SmtpTestSendRequest(BaseModel):
+    smtp_account_id: str
+    to_email: str
+    signature_html: Optional[str] = None

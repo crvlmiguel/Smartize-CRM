@@ -14,13 +14,16 @@ import Smtp from "@/pages/Smtp";
 import Statistics from "@/pages/Statistics";
 import Settings from "@/pages/Settings";
 import Deliverability from "@/pages/Deliverability";
+import NotFound from "@/pages/NotFound";
+import { Logo } from "@/components/Logo";
 
 function Protected({ children }) {
   const { user, ready } = useAuth();
   if (!ready) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-muted-foreground">
-        A carregar…
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4">
+        <Logo className="h-8 animate-pulse" />
+        <span className="text-muted-foreground text-sm">A carregar…</span>
       </div>
     );
   }
@@ -54,6 +57,7 @@ function App() {
               <Route path="configuracoes" element={<Settings />} />
               <Route path="deliverability" element={<Deliverability />} />
             </Route>
+            <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
         <Toaster position="top-right" richColors />

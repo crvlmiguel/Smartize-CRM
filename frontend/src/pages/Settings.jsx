@@ -23,7 +23,7 @@ export default function Settings() {
       const { data } = await api.put("/settings", {
         company_name: form.company_name, logo_url: form.logo_url,
         language: form.language, timezone: form.timezone,
-        default_signature: form.default_signature, footer: form.footer,
+        footer: form.footer,
       });
       setForm(data);
       toast.success("Configurações guardadas");
@@ -61,8 +61,8 @@ export default function Settings() {
             </Select>
           </div>
         </div>
-        <div><Label>Assinatura padrão</Label><Textarea value={form.default_signature || ""} data-testid="signature-input" onChange={(e) => set("default_signature", e.target.value)} className="mt-1.5" rows={3} /></div>
         <div><Label>Rodapé</Label><Textarea value={form.footer || ""} data-testid="footer-input" onChange={(e) => set("footer", e.target.value)} className="mt-1.5" rows={2} /></div>
+        <p className="text-xs text-muted-foreground">As assinaturas de email são geridas individualmente em cada Conta SMTP.</p>
       </div>
     </div>
   );

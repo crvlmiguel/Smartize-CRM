@@ -184,6 +184,49 @@ class TestSmtp:
         assert r.status_code == 200
         assert r.json()["name"] == "TEST_smtp2"
 
+    def test_create_smtp_with_signature_and_reply_to(self, client):
+        r = client.post(f"{BASE_URL}/api/smtp", json={
+            "name": "TEST_smtp_sig", "from_email": "sender2@test.pt", "from_name": "TEST2",
+            "host": "smtp.hostinger.com", "port": 465, "use_ssl": True, "use_tls": False,
+            "username": "u2", "password": "sekret2",
+            "reply_to": "reply@test.pt",
+            "signature_html": "<p><b>Test</b> Sig</p>",
+        })
+        assert r.status_code == 200, r.text
+        d = r.json()
+        assert d["reply_to"] == "reply@test.pt"
+        assert d["signature_html"] == "<p><b>Test</b> Sig</p>"
+        assert "password" not in d and "password_enc" not in d
+        TestSmtp._created["sig_id"] = d["id"]
+
+    def test_update_smtp_signature_persists(self, client):
+        sid = TestSmtp._created["sig_id"]
+        r = client.put(f"{BASE_URL}/api/smtp/{sid}", json={"signature_html": "<p>Updated</p>", "password": ""})
+        assert r.status_code == 200
+        assert r.json()["signature_html"] == "<p>Updated</p>"
+        # verify persistence via list
+        r2 = client.get(f"{BASE_URL}/api/smtp")
+        found = next(s for s in r2.json() if s["id"] == sid)
+        assert found["signature_html"] == "<p>Updated</p>"
+        assert "password_enc" not in found
+
+    def test_smtp_test_send_endpoint(self, client):
+        sid = TestSmtp._created["sig_id"]
+        r = client.post(f"{BASE_URL}/api/smtp/test-send", json={
+            "smtp_account_id": sid, "to_email": "recv@test.pt",
+            "signature_html": "<p>OverSig</p>",
+        })
+        assert r.status_code == 200
+        j = r.json()
+        assert "success" in j and "message" in j
+
+    def test_smtp_test_send_invalid_email(self, client):
+        sid = TestSmtp._created["sig_id"]
+        r = client.post(f"{BASE_URL}/api/smtp/test-send", json={
+            "smtp_account_id": sid, "to_email": "notanemail",
+        })
+        assert r.status_code == 400
+
     def test_smtp_test_endpoint(self, client):
         r = client.post(f"{BASE_URL}/api/smtp/test", json={
             "host": "127.0.0.1", "port": 1, "username": "u", "password": "p",
@@ -268,9 +311,32 @@ class TestSettings:
     def test_get_set_settings(self, client):
         r = client.get(f"{BASE_URL}/api/settings")
         assert r.status_code == 200
+        data = r.json()
+        # default_signature must not exist in settings anymore
+        assert "default_signature" not in data
         r2 = client.put(f"{BASE_URL}/api/settings", json={"company_name": "TEST_Smartize", "timezone": "Europe/Lisbon"})
         assert r2.status_code == 200
         assert r2.json()["company_name"] == "TEST_Smartize"
+        assert "default_signature" not in r2.json()
+
+    def test_settings_reject_default_signature(self, client):
+        # SettingsUpdate should silently ignore unknown fields OR reject. Either way, must not persist default_signature.
+        r = client.put(f"{BASE_URL}/api/settings", json={"default_signature": "<p>Nope</p>"})
+        # should still succeed but not save default_signature
+        assert r.status_code in (200, 422)
+        if r.status_code == 200:
+            assert "default_signature" not in r.json()
+
+
+# ---------- Signatures endpoint must be removed ----------
+class TestSignaturesRemoved:
+    def test_get_signatures_404(self, client):
+        r = client.get(f"{BASE_URL}/api/signatures")
+        assert r.status_code == 404
+
+    def test_post_signatures_404(self, client):
+        r = client.post(f"{BASE_URL}/api/signatures", json={"name": "x", "html": "<p/>"})
+        assert r.status_code in (404, 405)
 
 
 # ---------- Cleanup ----------

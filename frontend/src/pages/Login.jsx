@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Mail, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/context/AuthContext";
 import { apiError } from "@/lib/api";
+import { Logo } from "@/components/Logo";
 
 export default function Login() {
   const { login } = useAuth();
@@ -51,13 +52,8 @@ export default function Login() {
       <div className="flex items-center justify-center p-8 bg-background">
         <form onSubmit={submit} className="w-full max-w-sm" data-testid="login-form">
           <div className="flex items-center gap-2 mb-8">
-            <div className="h-10 w-10 rounded-md bg-primary flex items-center justify-center">
-              <Mail size={20} className="text-primary-foreground" />
-            </div>
-            <div>
-              <div className="font-heading font-black tracking-tight">SMARTIZE</div>
-              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Outreach</div>
-            </div>
+            <Logo className="h-8" />
+            <span className="text-[10px] uppercase tracking-widest text-muted-foreground mt-1.5">Outreach</span>
           </div>
           <h1 className="font-heading font-black text-2xl tracking-tight mb-1">Bem-vindo de volta</h1>
           <p className="text-sm text-muted-foreground mb-6">Inicie sessão para continuar.</p>

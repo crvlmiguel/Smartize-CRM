@@ -141,9 +141,13 @@ async def _send_job(campaign: dict, job: dict, smtp: dict):
     subject = substitute(template.get("subject", ""), variables)
     text_body = substitute(template.get("content_text", ""), variables)
     html_body = substitute(template.get("content_html", ""), variables)
-    signature = smtp.get("signature", "")
-    if signature and html_body:
-        html_body = html_body + f"<br/><br/>{signature}"
+
+    signature_html = smtp.get("signature_html", "")
+    if signature_html:
+        signature_html = substitute(signature_html, variables)
+        if not html_body:
+            html_body = substitute(template.get("content_text", ""), variables).replace("\n", "<br/>")
+        html_body = html_body + f'<br/><br/><div class="email-signature">{signature_html}</div>'
 
     tracking_id = job["tracking_id"]
     if html_body:

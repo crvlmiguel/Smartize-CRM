@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 2 validated: SMTP now owns signature_html and reply_to, /api/signatures removed, settings has no default_signature, and Smartize branding (logo) appears on Login, Sidebar, Footer and 404. Backend 38/38 pytest green, all iteration-2 UI flows green.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "SignatureEditor visual mode after code edit",
+        "issue": "After editing HTML in the 'Código HTML' tab and switching back to 'Visual', the contentEditable div did not immediately re-render the updated HTML (inner_html did not contain the edited text). The value/preview is however correct and persists correctly on save (verified via GET /api/smtp and reload-on-edit). Root cause: useEffect only depends on [mode] and editorRef.current may still be null on the first render of the tab; consider adding a small setTimeout or including 'value' in the effect and checking ref availability.",
+        "affected_selectors": ["[data-testid=signature-visual-editor]", "[data-testid=sig-tab-visual]"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(Low) Fix SignatureEditor: when switching from 'Código HTML' tab to 'Visual', re-hydrate the contentEditable div with the current value once the ref is attached (e.g., add ref callback or include [mode, value] in the effect with ref-null check)."
+  ],
+  "critical_code_review_comments": [
+    "api.py serialize() correctly excludes password_enc, verified via test_list_no_password + explicit API probe.",
+    "worker._send_job concatenates smtp.signature_html to html_body — verify template rendering for HTML emails (not tested end-to-end with an SMTP receiver; pytest covers API structure only).",
+    "SmtpUpdate accepts password='' and preserves prior password (verified). Good.",
+    "SettingsUpdate no longer accepts default_signature; extra fields are silently dropped by Pydantic (verified — 200 response, field not persisted).",
+    "SignatureEditor uses document.execCommand (deprecated but still works in Chrome/Firefox). Consider migrating to a maintained rich-text lib in future.",
+    "Nav testids still use accents (nav-configurações) — flagged in iteration_1, unchanged."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py"
+  ],
+  "success_rate": {"backend": "100% (38/38)", "frontend": "100% on required flows"},
+  "test_credentials": "miguel.carvalho@smartize.pt / 100%Smartize",
+  "seed_data_creation": "Created TEST_UI_smtp and TEST_ smtp accounts via Playwright + pytest; all cleaned up in teardown.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Frontend routes are PT: /configuracoes (NOT /settings), /campanhas, /contactos, /grupos, /estatisticas. pytest.ini forces -n 2 --dist loadscope so run serial with `pytest -n 0`. GET /api/smtp exposes signature_html and reply_to but NOT password/password_enc. /api/smtp/test-send accepts {smtp_account_id,to_email,signature_html?} and always 200s with {success,message}. /api/signatures returns 404 (endpoint removed).",
+  "rca of the issue": "N/A — no blocking bugs found in iteration 2 scope."
+}

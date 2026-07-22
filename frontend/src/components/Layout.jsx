@@ -1,9 +1,10 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, FolderKanban, FileText, Send, Server,
-  BarChart3, Settings as SettingsIcon, ShieldCheck, LogOut, Mail,
+  BarChart3, Settings as SettingsIcon, ShieldCheck, LogOut,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { Logo } from "@/components/Logo";
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
@@ -30,13 +31,8 @@ export default function Layout() {
     <div className="min-h-screen flex bg-background">
       <aside className="w-64 shrink-0 border-r border-border bg-card flex flex-col fixed h-screen">
         <div className="h-16 flex items-center gap-2 px-5 border-b border-border">
-          <div className="h-8 w-8 rounded-md bg-primary flex items-center justify-center">
-            <Mail size={18} className="text-primary-foreground" />
-          </div>
-          <div className="leading-tight">
-            <div className="font-heading font-black text-sm tracking-tight">SMARTIZE</div>
-            <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Outreach</div>
-          </div>
+          <Logo className="h-6" />
+          <span className="text-[10px] uppercase tracking-widest text-muted-foreground mt-1">Outreach</span>
         </div>
         <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-0.5">
           {NAV.map((item) => (
@@ -72,10 +68,19 @@ export default function Layout() {
           </button>
         </div>
       </aside>
-      <main className="flex-1 ml-64 min-h-screen">
-        <div className="max-w-[1400px] mx-auto px-8 py-8 animate-fade-in">
+      <main className="flex-1 ml-64 min-h-screen flex flex-col">
+        <div className="flex-1 max-w-[1400px] w-full mx-auto px-8 py-8 animate-fade-in">
           <Outlet />
         </div>
+        <footer className="border-t border-border px-8 py-4">
+          <div className="max-w-[1400px] mx-auto flex items-center justify-between text-xs text-muted-foreground">
+            <div className="flex items-center gap-2">
+              <Logo className="h-4" />
+              <span>Outreach</span>
+            </div>
+            <span>© {new Date().getFullYear()} Smartize. Todos os direitos reservados.</span>
+          </div>
+        </footer>
       </main>
     </div>
   );

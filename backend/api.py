@@ -9,12 +9,12 @@ from fastapi.responses import Response, RedirectResponse
 
 from core import db, now_utc, encrypt_secret
 from auth import get_current_user
-from email_service import build_variable_map, substitute, test_smtp_connection
+from email_service import build_variable_map, substitute, test_smtp_connection, send_email
 from worker import build_campaign_jobs
 from models import (
     ContactCreate, ContactUpdate, GroupCreate, GroupUpdate,
     TemplateCreate, TemplateUpdate, SmtpCreate, SmtpUpdate, SmtpTestRequest,
-    CampaignCreate, CampaignUpdate, SettingsUpdate,
+    CampaignCreate, CampaignUpdate, SettingsUpdate, SmtpTestSendRequest,
 )
 
 api = APIRouter(prefix="/api")
@@ -579,8 +579,7 @@ async def get_settings(user=Depends(get_current_user)):
     doc = await db.settings.find_one({"key": "global"})
     if not doc:
         doc = {"key": "global", "company_name": "Smartize", "logo_url": "",
-               "language": "pt", "timezone": "Europe/Lisbon",
-               "default_signature": "", "footer": ""}
+               "language": "pt", "timezone": "Europe/Lisbon", "footer": ""}
         await db.settings.insert_one(dict(doc))
     doc.pop("_id", None)
     return doc
@@ -593,6 +592,37 @@ async def update_settings(payload: SettingsUpdate, user=Depends(get_current_user
     doc = await db.settings.find_one({"key": "global"})
     doc.pop("_id", None)
     return doc
+
+
+# ==================== SIGNATURES (per SMTP account) ====================
+LOGO_URL = "https://customer-assets-rejwkqb3.emergentagent.net/job_campaign-manager-94/artifacts/z4t8akkh_logo_smartize_azul.webp"
+
+
+@api.post("/smtp/test-send")
+async def smtp_test_send(payload: SmtpTestSendRequest, user=Depends(get_current_user)):
+    smtp = await db.smtp_accounts.find_one({"_id": _oid(payload.smtp_account_id)})
+    if not smtp:
+        raise HTTPException(status_code=400, detail="Conta SMTP inválida")
+    if not valid_email(payload.to_email):
+        raise HTTPException(status_code=400, detail="Email de destino inválido")
+    sample = {"first_name": "João", "last_name": "Silva", "company": "Smartize",
+              "position": "CEO", "email": payload.to_email, "phone": "+351 900 000 000",
+              "city": "Lisboa", "country": "Portugal", "website": "smartize.pt", "custom_fields": {}}
+    variables = build_variable_map(sample)
+    sig = payload.signature_html if payload.signature_html is not None else smtp.get("signature_html", "")
+    sig = substitute(sig or "", variables)
+    body = (
+        f'<div style="font-family:Arial,sans-serif">'
+        f'<img src="{LOGO_URL}" alt="Smartize" style="height:28px;margin-bottom:16px" />'
+        f'<p>Esta é uma mensagem de teste enviada pela plataforma Smartize Outreach.</p>'
+        f'<p>Confirma que a sua conta SMTP e assinatura estão a funcionar corretamente.</p>'
+        f'<br/><div class="email-signature">{sig}</div></div>'
+    )
+    try:
+        await send_email(smtp, payload.to_email, "Teste de envio — Smartize Outreach", body, "Mensagem de teste da Smartize Outreach")
+        return {"success": True, "message": f"Email de teste enviado para {payload.to_email}"}
+    except Exception as e:
+        return {"success": False, "message": f"Falha no envio: {str(e)}"}
 
 
 # ==================== TRACKING (no auth) ====================

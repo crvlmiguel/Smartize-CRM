@@ -84,6 +84,9 @@ async def send_email(
     msg["Date"] = email.utils.formatdate(localtime=True)
     msg["Message-ID"] = email.utils.make_msgid(domain=from_email.split("@")[-1] if "@" in from_email else None)
     msg["MIME-Version"] = "1.0"
+    reply_to = smtp_account.get("reply_to")
+    if reply_to:
+        msg["Reply-To"] = reply_to
 
     if text_body:
         msg.attach(MIMEText(text_body, "plain", "utf-8"))
