@@ -1,0 +1,155 @@
+from typing import Optional, List, Dict, Any
+from pydantic import BaseModel, Field, EmailStr
+
+
+# ---------------- Auth ----------------
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+    name: Optional[str] = "Utilizador"
+
+
+# ---------------- Contacts ----------------
+class ContactCreate(BaseModel):
+    first_name: str = ""
+    last_name: str = ""
+    company: str = ""
+    position: str = ""
+    email: str
+    phone: str = ""
+    city: str = ""
+    country: str = ""
+    website: str = ""
+    group_id: Optional[str] = None
+    status: str = "ativo"  # ativo, respondido, bounce, descadastrado
+    notes: str = ""
+    custom_fields: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ContactUpdate(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    company: Optional[str] = None
+    position: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    city: Optional[str] = None
+    country: Optional[str] = None
+    website: Optional[str] = None
+    group_id: Optional[str] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
+    custom_fields: Optional[Dict[str, Any]] = None
+
+
+# ---------------- Groups ----------------
+class GroupCreate(BaseModel):
+    name: str
+    description: str = ""
+
+
+class GroupUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+
+# ---------------- Templates ----------------
+class TemplateCreate(BaseModel):
+    name: str
+    subject: str = ""
+    content_html: str = ""
+    content_text: str = ""
+
+
+class TemplateUpdate(BaseModel):
+    name: Optional[str] = None
+    subject: Optional[str] = None
+    content_html: Optional[str] = None
+    content_text: Optional[str] = None
+
+
+# ---------------- SMTP ----------------
+class SmtpCreate(BaseModel):
+    name: str
+    from_name: str
+    from_email: str
+    host: str
+    port: int = 587
+    use_ssl: bool = False
+    use_tls: bool = True
+    username: str
+    password: str = ""
+    signature: str = ""
+    daily_limit: int = 200
+    status: str = "ativo"
+
+
+class SmtpUpdate(BaseModel):
+    name: Optional[str] = None
+    from_name: Optional[str] = None
+    from_email: Optional[str] = None
+    host: Optional[str] = None
+    port: Optional[int] = None
+    use_ssl: Optional[bool] = None
+    use_tls: Optional[bool] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+    signature: Optional[str] = None
+    daily_limit: Optional[int] = None
+    status: Optional[str] = None
+
+
+class SmtpTestRequest(BaseModel):
+    host: str
+    port: int = 587
+    use_ssl: bool = False
+    use_tls: bool = True
+    username: str
+    password: str = ""
+    from_email: Optional[str] = None
+    smtp_account_id: Optional[str] = None  # to reuse stored password
+
+
+# ---------------- Campaigns ----------------
+class CampaignSettings(BaseModel):
+    min_interval_seconds: int = 30
+    max_interval_seconds: int = 90
+    emails_per_hour: int = 30
+    emails_per_day: int = 200
+    business_days_only: bool = True
+    business_hour_start: int = 9
+    business_hour_end: int = 18
+    timezone: str = "Europe/Lisbon"
+
+
+class CampaignCreate(BaseModel):
+    name: str
+    smtp_account_id: str
+    group_id: str
+    template_id: str
+    schedule_at: Optional[str] = None  # ISO string; None = send now
+    settings: CampaignSettings = Field(default_factory=CampaignSettings)
+
+
+class CampaignUpdate(BaseModel):
+    name: Optional[str] = None
+    smtp_account_id: Optional[str] = None
+    group_id: Optional[str] = None
+    template_id: Optional[str] = None
+    schedule_at: Optional[str] = None
+    settings: Optional[CampaignSettings] = None
+
+
+# ---------------- Settings ----------------
+class SettingsUpdate(BaseModel):
+    company_name: Optional[str] = None
+    logo_url: Optional[str] = None
+    language: Optional[str] = None
+    timezone: Optional[str] = None
+    default_signature: Optional[str] = None
+    footer: Optional[str] = None

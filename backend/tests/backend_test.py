@@ -1,0 +1,292 @@
+"""Smartize Outreach backend regression tests."""
+import io
+import os
+import time
+import pytest
+import requests
+
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://campaign-manager-94.preview.emergentagent.com").rstrip("/")
+EMAIL = "miguel.carvalho@smartize.pt"
+PASSWORD = "100%Smartize"
+
+
+@pytest.fixture(scope="session")
+def token():
+    r = requests.post(f"{BASE_URL}/api/auth/login", json={"email": EMAIL, "password": PASSWORD}, timeout=30)
+    assert r.status_code == 200, r.text
+    return r.json()["token"]
+
+
+@pytest.fixture(scope="session")
+def client(token):
+    s = requests.Session()
+    s.headers.update({"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+    return s
+
+
+# ---------- Auth ----------
+class TestAuth:
+    def test_login_success(self):
+        r = requests.post(f"{BASE_URL}/api/auth/login", json={"email": EMAIL, "password": PASSWORD}, timeout=30)
+        assert r.status_code == 200
+        data = r.json()
+        assert "token" in data and data["user"]["email"] == EMAIL
+
+    def test_login_bad_credentials(self):
+        r = requests.post(f"{BASE_URL}/api/auth/login", json={"email": EMAIL, "password": "wrong"}, timeout=30)
+        assert r.status_code == 401
+
+    def test_me_no_token(self):
+        r = requests.get(f"{BASE_URL}/api/auth/me", timeout=30)
+        assert r.status_code == 401
+
+    def test_me_ok(self, client):
+        r = client.get(f"{BASE_URL}/api/auth/me")
+        assert r.status_code == 200
+        assert r.json()["email"] == EMAIL
+
+
+# ---------- Dashboard ----------
+class TestDashboard:
+    def test_dashboard_shape(self, client):
+        r = client.get(f"{BASE_URL}/api/dashboard")
+        assert r.status_code == 200
+        d = r.json()
+        assert "totals" in d and "recent_campaigns" in d and "daily" in d
+        for k in ["contacts", "groups", "campaigns", "sent", "delivered", "opened", "clicked", "replied", "bounced"]:
+            assert k in d["totals"]
+        assert len(d["daily"]) == 14
+
+
+# ---------- Groups ----------
+class TestGroups:
+    _created = {}
+
+    def test_create_group(self, client):
+        r = client.post(f"{BASE_URL}/api/groups", json={"name": "TEST_grupo_a", "description": "desc"})
+        assert r.status_code == 200
+        d = r.json()
+        assert d["name"] == "TEST_grupo_a" and d["contact_count"] == 0
+        TestGroups._created["id"] = d["id"]
+
+    def test_list_groups(self, client):
+        r = client.get(f"{BASE_URL}/api/groups")
+        assert r.status_code == 200
+        assert any(g["id"] == TestGroups._created["id"] for g in r.json())
+
+    def test_update_group(self, client):
+        gid = TestGroups._created["id"]
+        r = client.put(f"{BASE_URL}/api/groups/{gid}", json={"name": "TEST_grupo_a2"})
+        assert r.status_code == 200
+        assert r.json()["name"] == "TEST_grupo_a2"
+
+
+# ---------- Contacts ----------
+class TestContacts:
+    _created = {}
+
+    def test_create_contact(self, client):
+        gid = TestGroups._created["id"]
+        r = client.post(f"{BASE_URL}/api/contacts", json={
+            "email": "TEST_alice@example.com", "first_name": "Alice", "last_name": "Silva",
+            "company": "AcmePT", "status": "ativo", "group_id": gid,
+        })
+        assert r.status_code == 200
+        d = r.json()
+        assert d["email"] == "test_alice@example.com"
+        assert "password_enc" not in d
+        TestContacts._created["id"] = d["id"]
+
+    def test_create_contact_invalid_email(self, client):
+        r = client.post(f"{BASE_URL}/api/contacts", json={"email": "notanemail"})
+        assert r.status_code == 400
+
+    def test_create_contact_duplicate(self, client):
+        r = client.post(f"{BASE_URL}/api/contacts", json={"email": "TEST_alice@example.com"})
+        assert r.status_code == 400
+
+    def test_get_contact(self, client):
+        r = client.get(f"{BASE_URL}/api/contacts/{TestContacts._created['id']}")
+        assert r.status_code == 200
+
+    def test_update_contact(self, client):
+        r = client.put(f"{BASE_URL}/api/contacts/{TestContacts._created['id']}", json={"first_name": "Alicia"})
+        assert r.status_code == 200
+        assert r.json()["first_name"] == "Alicia"
+
+    def test_search_and_filter(self, client):
+        r = client.get(f"{BASE_URL}/api/contacts", params={"search": "Alicia", "group_id": TestGroups._created["id"]})
+        assert r.status_code == 200
+        assert len(r.json()) >= 1
+
+    def test_import_csv(self, client, token):
+        csv = "first_name,last_name,email,company\nBob,Costa,TEST_bob@example.com,AcmePT\nBad,Row,notemail,X\nDup,Ent,TEST_alice@example.com,AcmePT\nCarol,Dias,TEST_carol@example.com,AcmePT\n"
+        files = {"file": ("contacts.csv", csv.encode(), "text/csv")}
+        data = {"group_id": TestGroups._created["id"]}
+        r = requests.post(f"{BASE_URL}/api/contacts/import", files=files, data=data,
+                          headers={"Authorization": f"Bearer {token}"}, timeout=60)
+        assert r.status_code == 200, r.text
+        j = r.json()
+        assert j["imported"] == 2 and j["duplicates"] == 1 and j["skipped"] == 1
+
+
+# ---------- Templates ----------
+class TestTemplates:
+    _created = {}
+
+    def test_create_template(self, client):
+        r = client.post(f"{BASE_URL}/api/templates", json={
+            "name": "TEST_tpl", "subject": "Olá {first_name}",
+            "content_html": "<p>Olá {first_name} da {company}</p>", "content_text": "Olá {first_name}",
+        })
+        assert r.status_code == 200
+        TestTemplates._created["id"] = r.json()["id"]
+
+    def test_preview(self, client):
+        r = client.post(f"{BASE_URL}/api/templates/preview", json={
+            "subject": "Olá {first_name}", "content_html": "<p>{company}</p>", "content_text": "{first_name}",
+        })
+        assert r.status_code == 200
+        d = r.json()
+        assert "João" in d["subject"] and "Smartize" in d["content_html"]
+
+    def test_duplicate(self, client):
+        r = client.post(f"{BASE_URL}/api/templates/{TestTemplates._created['id']}/duplicate")
+        assert r.status_code == 200
+        assert "cópia" in r.json()["name"]
+
+
+# ---------- SMTP ----------
+class TestSmtp:
+    _created = {}
+
+    def test_create_smtp(self, client):
+        r = client.post(f"{BASE_URL}/api/smtp", json={
+            "name": "TEST_smtp", "from_email": "sender@test.pt", "from_name": "TEST",
+            "host": "localhost", "port": 2525, "use_tls": False, "use_ssl": False,
+            "username": "u", "password": "supersecret", "daily_limit": 100,
+        })
+        assert r.status_code == 200
+        d = r.json()
+        # password never returned
+        assert "password" not in d and "password_enc" not in d
+        TestSmtp._created["id"] = d["id"]
+
+    def test_list_no_password(self, client):
+        r = client.get(f"{BASE_URL}/api/smtp")
+        assert r.status_code == 200
+        for s in r.json():
+            assert "password" not in s and "password_enc" not in s
+
+    def test_update_smtp_keeps_password(self, client):
+        sid = TestSmtp._created["id"]
+        r = client.put(f"{BASE_URL}/api/smtp/{sid}", json={"name": "TEST_smtp2", "password": ""})
+        assert r.status_code == 200
+        assert r.json()["name"] == "TEST_smtp2"
+
+    def test_smtp_test_endpoint(self, client):
+        r = client.post(f"{BASE_URL}/api/smtp/test", json={
+            "host": "127.0.0.1", "port": 1, "username": "u", "password": "p",
+            "use_ssl": False, "use_tls": False,
+        })
+        # We expect the endpoint to respond (success or failure), not crash
+        assert r.status_code == 200
+        assert "success" in r.json() and "message" in r.json()
+
+
+# ---------- Campaigns ----------
+class TestCampaigns:
+    _created = {}
+
+    def test_create_campaign(self, client):
+        payload = {
+            "name": "TEST_camp", "smtp_account_id": TestSmtp._created["id"],
+            "group_id": TestGroups._created["id"], "template_id": TestTemplates._created["id"],
+            "min_interval_seconds": 1, "max_interval_seconds": 2,
+            "business_days_only": False, "business_hour_start": 0, "business_hour_end": 23,
+            "daily_send_limit": 50, "track_opens": True, "track_clicks": True,
+        }
+        r = client.post(f"{BASE_URL}/api/campaigns", json=payload)
+        assert r.status_code == 200
+        d = r.json()
+        assert d["status"] == "rascunho"
+        TestCampaigns._created["id"] = d["id"]
+
+    def test_start_campaign(self, client):
+        cid = TestCampaigns._created["id"]
+        r = client.post(f"{BASE_URL}/api/campaigns/{cid}/start")
+        assert r.status_code == 200, r.text
+        assert r.json()["recipients"] >= 1
+
+    def test_stats(self, client):
+        cid = TestCampaigns._created["id"]
+        r = client.get(f"{BASE_URL}/api/campaigns/{cid}/stats")
+        assert r.status_code == 200
+        d = r.json()
+        assert "recipients" in d and "stats" in d
+        assert len(d["recipients"]) >= 1
+
+    def test_duplicate(self, client):
+        cid = TestCampaigns._created["id"]
+        r = client.post(f"{BASE_URL}/api/campaigns/{cid}/duplicate")
+        assert r.status_code == 200
+        d = r.json()
+        assert d["status"] == "rascunho"
+        TestCampaigns._created["dup_id"] = d["id"]
+
+    def test_cancel(self, client):
+        cid = TestCampaigns._created["id"]
+        r = client.post(f"{BASE_URL}/api/campaigns/{cid}/cancel")
+        assert r.status_code == 200
+
+    def test_archive(self, client):
+        cid = TestCampaigns._created["id"]
+        r = client.post(f"{BASE_URL}/api/campaigns/{cid}/archive")
+        assert r.status_code == 200
+
+    def test_start_no_contacts_error(self, client):
+        # Create empty group and campaign
+        gr = client.post(f"{BASE_URL}/api/groups", json={"name": "TEST_empty", "description": ""})
+        gid = gr.json()["id"]
+        payload = {
+            "name": "TEST_camp_empty", "smtp_account_id": TestSmtp._created["id"],
+            "group_id": gid, "template_id": TestTemplates._created["id"],
+            "min_interval_seconds": 1, "max_interval_seconds": 2,
+            "business_days_only": False, "business_hour_start": 0, "business_hour_end": 23,
+            "daily_send_limit": 50, "track_opens": True, "track_clicks": True,
+        }
+        r = client.post(f"{BASE_URL}/api/campaigns", json=payload)
+        cid = r.json()["id"]
+        r2 = client.post(f"{BASE_URL}/api/campaigns/{cid}/start")
+        assert r2.status_code == 400
+        client.delete(f"{BASE_URL}/api/campaigns/{cid}")
+        client.delete(f"{BASE_URL}/api/groups/{gid}")
+
+
+# ---------- Settings ----------
+class TestSettings:
+    def test_get_set_settings(self, client):
+        r = client.get(f"{BASE_URL}/api/settings")
+        assert r.status_code == 200
+        r2 = client.put(f"{BASE_URL}/api/settings", json={"company_name": "TEST_Smartize", "timezone": "Europe/Lisbon"})
+        assert r2.status_code == 200
+        assert r2.json()["company_name"] == "TEST_Smartize"
+
+
+# ---------- Cleanup ----------
+def test_zzz_cleanup(client):
+    for c in client.get(f"{BASE_URL}/api/campaigns").json():
+        if c["name"].startswith("TEST_") or "cópia" in c["name"]:
+            client.delete(f"{BASE_URL}/api/campaigns/{c['id']}")
+    for t in client.get(f"{BASE_URL}/api/templates").json():
+        if t["name"].startswith("TEST_") or "cópia" in t["name"]:
+            client.delete(f"{BASE_URL}/api/templates/{t['id']}")
+    for s in client.get(f"{BASE_URL}/api/smtp").json():
+        if s["name"].startswith("TEST_"):
+            client.delete(f"{BASE_URL}/api/smtp/{s['id']}")
+    for cont in client.get(f"{BASE_URL}/api/contacts").json():
+        if cont["email"].startswith("test_"):
+            client.delete(f"{BASE_URL}/api/contacts/{cont['id']}")
+    for g in client.get(f"{BASE_URL}/api/groups").json():
+        if g["name"].startswith("TEST_"):
+            client.delete(f"{BASE_URL}/api/groups/{g['id']}")
