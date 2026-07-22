@@ -76,6 +76,7 @@ class TemplateUpdate(BaseModel):
 # ---------------- SMTP ----------------
 class SmtpCreate(BaseModel):
     name: str
+    account_type: str = "smtp"  # smtp | google
     from_name: str
     from_email: str
     host: str
@@ -88,10 +89,16 @@ class SmtpCreate(BaseModel):
     signature_html: str = ""
     daily_limit: int = 200
     status: str = "ativo"
+    is_default: bool = False
+    imap_host: Optional[str] = None
+    imap_port: Optional[int] = None
+    imap_username: Optional[str] = None
+    imap_password: Optional[str] = None
 
 
 class SmtpUpdate(BaseModel):
     name: Optional[str] = None
+    account_type: Optional[str] = None
     from_name: Optional[str] = None
     from_email: Optional[str] = None
     host: Optional[str] = None
@@ -104,6 +111,11 @@ class SmtpUpdate(BaseModel):
     signature_html: Optional[str] = None
     daily_limit: Optional[int] = None
     status: Optional[str] = None
+    is_default: Optional[bool] = None
+    imap_host: Optional[str] = None
+    imap_port: Optional[int] = None
+    imap_username: Optional[str] = None
+    imap_password: Optional[str] = None
 
 
 class SmtpTestRequest(BaseModel):
@@ -131,7 +143,7 @@ class CampaignSettings(BaseModel):
 
 class CampaignCreate(BaseModel):
     name: str
-    smtp_account_id: str
+    smtp_account_id: Optional[str] = None
     group_id: str
     template_id: str
     schedule_at: Optional[str] = None  # ISO string; None = send now

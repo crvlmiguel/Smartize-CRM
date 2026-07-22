@@ -328,6 +328,116 @@ class TestSettings:
             assert "default_signature" not in r.json()
 
 
+# ---------- Iteration 3: Branding + account_type + is_default/disconnect ----------
+class TestIter3:
+    _ids = {}
+
+    def test_public_branding_no_auth(self):
+        r = requests.get(f"{BASE_URL}/api/public/branding", timeout=30)
+        assert r.status_code == 200
+        d = r.json()
+        assert "logo_url" in d and "company_name" in d
+        assert isinstance(d["logo_url"], str) and isinstance(d["company_name"], str)
+
+    def test_settings_save_logo_base64_and_branding_reflects(self, client):
+        tiny = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII="
+        r = client.put(f"{BASE_URL}/api/settings", json={"logo_url": tiny, "company_name": "TEST_Smartize3"})
+        assert r.status_code == 200
+        assert r.json().get("logo_url") == tiny
+        # public branding must expose it without auth
+        pb = requests.get(f"{BASE_URL}/api/public/branding", timeout=30).json()
+        assert pb["logo_url"] == tiny
+        assert pb["company_name"] == "TEST_Smartize3"
+
+    def test_create_google_account_defaults(self, client):
+        # first, delete any TEST_ smtp so is_default assignment tests reliably
+        r = client.post(f"{BASE_URL}/api/smtp", json={
+            "name": "TEST_iter3_google", "account_type": "google",
+            "from_email": "g@test.pt", "from_name": "G",
+            "host": "smtp.gmail.com", "port": 465, "use_ssl": True, "use_tls": False,
+            "username": "g@test.pt", "password": "app-pass-xyz",
+        })
+        assert r.status_code == 200, r.text
+        d = r.json()
+        assert d["account_type"] == "google"
+        assert d.get("host") == "smtp.gmail.com" and d.get("port") == 465
+        assert "password" not in d and "password_enc" not in d
+        assert "imap_password" not in d and "imap_password_enc" not in d
+        assert "is_default" in d and "connection_status" in d
+        TestIter3._ids["google"] = d["id"]
+
+    def test_create_smtp_custom_account(self, client):
+        r = client.post(f"{BASE_URL}/api/smtp", json={
+            "name": "TEST_iter3_custom", "account_type": "smtp",
+            "from_email": "c@test.pt", "from_name": "C",
+            "host": "smtp.hostinger.com", "port": 465, "use_ssl": True, "use_tls": False,
+            "username": "c@test.pt", "password": "sekret",
+            "imap_host": "imap.hostinger.com", "imap_port": 993,
+            "imap_username": "c@test.pt", "imap_password": "imapsekret",
+        })
+        assert r.status_code == 200, r.text
+        d = r.json()
+        assert d["account_type"] == "smtp"
+        assert "password_enc" not in d and "imap_password_enc" not in d
+        assert d.get("imap_host") == "imap.hostinger.com"
+        TestIter3._ids["custom"] = d["id"]
+
+    def test_set_default_switches(self, client):
+        gid = TestIter3._ids["google"]
+        cid = TestIter3._ids["custom"]
+        # set custom as default
+        r = client.post(f"{BASE_URL}/api/smtp/{cid}/set-default")
+        assert r.status_code == 200
+        lst = client.get(f"{BASE_URL}/api/smtp").json()
+        defaults = [s for s in lst if s.get("is_default")]
+        assert len(defaults) == 1 and defaults[0]["id"] == cid
+        # now switch to google
+        r = client.post(f"{BASE_URL}/api/smtp/{gid}/set-default")
+        assert r.status_code == 200
+        lst = client.get(f"{BASE_URL}/api/smtp").json()
+        defaults = [s for s in lst if s.get("is_default")]
+        assert len(defaults) == 1 and defaults[0]["id"] == gid
+
+    def test_disconnect_marks_status(self, client):
+        cid = TestIter3._ids["custom"]
+        r = client.post(f"{BASE_URL}/api/smtp/{cid}/disconnect")
+        assert r.status_code == 200
+        lst = client.get(f"{BASE_URL}/api/smtp").json()
+        acc = next(s for s in lst if s["id"] == cid)
+        assert acc.get("connection_status") == "disconnected"
+
+    def test_campaign_uses_default_when_no_smtp_id(self, client):
+        # ensure default is google
+        gid = TestIter3._ids["google"]
+        client.post(f"{BASE_URL}/api/smtp/{gid}/set-default")
+        # need a group + template
+        gr = client.post(f"{BASE_URL}/api/groups", json={"name": "TEST_iter3_grp"})
+        group_id = gr.json()["id"]
+        tp = client.post(f"{BASE_URL}/api/templates", json={
+            "name": "TEST_iter3_tpl", "subject": "s", "content_html": "<p>h</p>", "content_text": "t"
+        })
+        tid = tp.json()["id"]
+        r = client.post(f"{BASE_URL}/api/campaigns", json={
+            "name": "TEST_iter3_camp_nosmtp",
+            "group_id": group_id, "template_id": tid,
+            "min_interval_seconds": 1, "max_interval_seconds": 2,
+            "business_days_only": False, "business_hour_start": 0, "business_hour_end": 23,
+            "daily_send_limit": 10, "track_opens": True, "track_clicks": True,
+        })
+        assert r.status_code == 200, r.text
+        assert r.json()["smtp_account_id"] == gid
+        # cleanup
+        client.delete(f"{BASE_URL}/api/campaigns/{r.json()['id']}")
+        client.delete(f"{BASE_URL}/api/templates/{tid}")
+        client.delete(f"{BASE_URL}/api/groups/{group_id}")
+
+    def test_smtp_list_hides_all_secrets(self, client):
+        lst = client.get(f"{BASE_URL}/api/smtp").json()
+        for s in lst:
+            for k in ("password", "password_enc", "imap_password", "imap_password_enc"):
+                assert k not in s, f"leak {k}"
+
+
 # ---------- Signatures endpoint must be removed ----------
 class TestSignaturesRemoved:
     def test_get_signatures_404(self, client):

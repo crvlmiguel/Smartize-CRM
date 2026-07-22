@@ -41,6 +41,7 @@ def serialize(doc: dict) -> dict:
     out = dict(doc)
     out["id"] = str(out.pop("_id"))
     out.pop("password_enc", None)
+    out.pop("imap_password_enc", None)
     return out
 
 
@@ -314,8 +315,15 @@ async def list_smtp(user=Depends(get_current_user)):
 @api.post("/smtp")
 async def create_smtp(payload: SmtpCreate, user=Depends(get_current_user)):
     doc = payload.model_dump()
-    doc["password_enc"] = encrypt_secret(doc.pop("password", ""))
+    doc["password_enc"] = encrypt_secret(doc.pop("password", "") or "")
+    doc["imap_password_enc"] = encrypt_secret(doc.pop("imap_password", "") or "")
     doc["created_at"] = now_utc().isoformat()
+    doc["connection_status"] = "unknown"
+    doc["last_sync"] = None
+    make_default = doc.get("is_default") or await db.smtp_accounts.count_documents({}) == 0
+    doc["is_default"] = make_default
+    if make_default:
+        await db.smtp_accounts.update_many({}, {"$set": {"is_default": False}})
     res = await db.smtp_accounts.insert_one(doc)
     doc["_id"] = res.inserted_id
     return serialize(doc)
@@ -328,16 +336,45 @@ async def update_smtp(smtp_id: str, payload: SmtpUpdate, user=Depends(get_curren
         pw = updates.pop("password")
         if pw:
             updates["password_enc"] = encrypt_secret(pw)
+    if "imap_password" in updates:
+        ipw = updates.pop("imap_password")
+        if ipw:
+            updates["imap_password_enc"] = encrypt_secret(ipw)
+    if updates.get("is_default"):
+        await db.smtp_accounts.update_many({}, {"$set": {"is_default": False}})
     await db.smtp_accounts.update_one({"_id": _oid(smtp_id)}, {"$set": updates})
     doc = await db.smtp_accounts.find_one({"_id": _oid(smtp_id)})
     if not doc:
-        raise HTTPException(status_code=404, detail="Conta SMTP não encontrada")
+        raise HTTPException(status_code=404, detail="Conta de email não encontrada")
     return serialize(doc)
 
 
 @api.delete("/smtp/{smtp_id}")
 async def delete_smtp(smtp_id: str, user=Depends(get_current_user)):
+    acc = await db.smtp_accounts.find_one({"_id": _oid(smtp_id)})
     await db.smtp_accounts.delete_one({"_id": _oid(smtp_id)})
+    if acc and acc.get("is_default"):
+        other = await db.smtp_accounts.find_one({})
+        if other:
+            await db.smtp_accounts.update_one({"_id": other["_id"]}, {"$set": {"is_default": True}})
+    return {"ok": True}
+
+
+@api.post("/smtp/{smtp_id}/set-default")
+async def set_default_smtp(smtp_id: str, user=Depends(get_current_user)):
+    acc = await db.smtp_accounts.find_one({"_id": _oid(smtp_id)})
+    if not acc:
+        raise HTTPException(status_code=404, detail="Conta de email não encontrada")
+    await db.smtp_accounts.update_many({}, {"$set": {"is_default": False}})
+    await db.smtp_accounts.update_one({"_id": _oid(smtp_id)}, {"$set": {"is_default": True}})
+    return {"ok": True}
+
+
+@api.post("/smtp/{smtp_id}/disconnect")
+async def disconnect_smtp(smtp_id: str, user=Depends(get_current_user)):
+    res = await db.smtp_accounts.update_one({"_id": _oid(smtp_id)}, {"$set": {"connection_status": "disconnected", "status": "inativo"}})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Conta de email não encontrada")
     return {"ok": True}
 
 
@@ -352,6 +389,13 @@ async def test_smtp(payload: SmtpTestRequest, user=Depends(get_current_user)):
     ok, message = await test_smtp_connection(
         payload.host, payload.port, payload.username, password, payload.use_ssl, payload.use_tls
     )
+    if payload.smtp_account_id:
+        await db.smtp_accounts.update_one(
+            {"_id": _oid(payload.smtp_account_id)},
+            {"$set": {"connection_status": "connected" if ok else "disconnected",
+                      "last_sync": now_utc().isoformat() if ok else None,
+                      "status": "ativo" if ok else "inativo"}},
+        )
     return {"success": ok, "message": message}
 
 
@@ -392,6 +436,11 @@ async def list_campaigns(user=Depends(get_current_user)):
 @api.post("/campaigns")
 async def create_campaign(payload: CampaignCreate, user=Depends(get_current_user)):
     doc = payload.model_dump()
+    if not doc.get("smtp_account_id"):
+        default = await db.smtp_accounts.find_one({"is_default": True}) or await db.smtp_accounts.find_one({})
+        if not default:
+            raise HTTPException(status_code=400, detail="Nenhuma conta de email configurada")
+        doc["smtp_account_id"] = str(default["_id"])
     doc["status"] = "rascunho"  # draft
     doc["created_at"] = now_utc().isoformat()
     doc["started_at"] = None
@@ -623,6 +672,17 @@ async def smtp_test_send(payload: SmtpTestSendRequest, user=Depends(get_current_
         return {"success": True, "message": f"Email de teste enviado para {payload.to_email}"}
     except Exception as e:
         return {"success": False, "message": f"Falha no envio: {str(e)}"}
+
+
+DEFAULT_LOGO = "/smartize-logo.webp"
+
+
+@api.get("/public/branding")
+async def public_branding():
+    doc = await db.settings.find_one({"key": "global"})
+    logo = (doc or {}).get("logo_url") or DEFAULT_LOGO
+    company = (doc or {}).get("company_name") or "Smartize"
+    return {"logo_url": logo, "company_name": company}
 
 
 # ==================== TRACKING (no auth) ====================

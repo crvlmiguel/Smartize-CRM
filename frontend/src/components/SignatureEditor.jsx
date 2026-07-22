@@ -32,6 +32,11 @@ export function SignatureEditor({ value, onChange }) {
   const [mode, setMode] = useState("visual");
   const editorRef = useRef(null);
 
+  const hydrate = (node) => {
+    editorRef.current = node;
+    if (node && node.innerHTML !== (value || "")) node.innerHTML = value || "";
+  };
+
   useEffect(() => {
     if (mode === "visual" && editorRef.current && editorRef.current.innerHTML !== (value || "")) {
       editorRef.current.innerHTML = value || "";
@@ -93,7 +98,7 @@ export function SignatureEditor({ value, onChange }) {
               </select>
             </div>
             <div
-              ref={editorRef}
+              ref={hydrate}
               contentEditable
               data-testid="signature-visual-editor"
               onInput={() => onChange(editorRef.current.innerHTML)}

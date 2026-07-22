@@ -1,0 +1,34 @@
+{
+  "summary": "Iteration 3 fully validated end-to-end. Backend 46/46 pytest green (added 8 new tests for /api/public/branding, logo base64 persistence, account_type google/smtp, is_default + set-default (single default guarantee), disconnect, imap fields hidden, campaign fallback to default SMTP, and full-secret hiding). Frontend Playwright green on all iteration-3 flows: sidebar has no SMTP/Deliverability, /smtp and /deliverability redirect to /configuracoes, Settings shows tab-geral + tab-contas, logo upload/preview/remove/save works, Nova conta -> choose-type dialog with SMTP + Google branches, Hostinger preset fills smtp.hostinger.com:465, Google branch hides host/port + shows 'Ligar Conta Google', default badge single, set-default swaps, disconnect, edit + signature template, test-smtp, send-test, delete + confirm. Regression navigation to /, /contactos, /grupos, /templates, /campanhas, /estatisticas, /configuracoes all clean. /api/public/branding responds 200 without auth.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/iter3_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "api.py: /api/public/branding correctly unauthenticated (routed under APIRouter with same auth-free path). No leak of internals.",
+    "api.py serialize() strips password_enc AND imap_password_enc — verified via TestIter3.test_smtp_list_hides_all_secrets.",
+    "create_smtp is_default logic: first account auto-default; explicit is_default=true resets others — good. Race condition only if two clients POST concurrently, low priority.",
+    "create_campaign correctly falls back to is_default=true account when smtp_account_id absent (verified).",
+    "disconnect endpoint sets both connection_status='disconnected' and status='inativo' — good UX signal.",
+    "delete_smtp promotes another account to default if the deleted one was default — good, prevents orphaned system.",
+    "Settings has no size limit enforced on logo_url base64 — potential DoS if huge blob posted. Consider server-side size cap (e.g., 2MB) on SettingsUpdate.logo_url.",
+    "SignatureEditor visual/code re-hydration issue from iteration 2 remains cosmetic and does not affect persistence."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py"
+  ],
+  "success_rate": { "backend": "100% (46/46)", "frontend": "100% on required iter-3 flows" },
+  "test_credentials": "miguel.carvalho@smartize.pt / 100%Smartize",
+  "seed_data_creation": "Created TEST_UI_smtp_iter3 and TEST_UI_google_iter3 accounts + TEST_iter3_* group/template via UI and pytest. All cleaned up. Branding restored to logo_url='' and company_name='Smartize' after test run.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 3 done. Routes are PT (/configuracoes, /contactos, /grupos, /templates, /campanhas, /estatisticas). /smtp and /deliverability now 302-redirect to /configuracoes via <Navigate>. Settings has two tabs: tab-geral (branding+company+locale) and tab-contas (EmailAccounts CRUD). Backend logo persisted as base64 in settings.logo_url; /api/public/branding is the unauthenticated read endpoint. SMTP accounts: account_type in {smtp, google}, is_default bool with single-active invariant enforced server-side, connection_status in {unknown, connected, disconnected}, imap_* optional. Campaign create falls back to default smtp. Consider adding size cap on logo_url in future iteration.",
+  "rca of the issue": "N/A — no blocking bugs found."
+}
