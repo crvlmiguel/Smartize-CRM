@@ -646,9 +646,6 @@ async def update_settings(payload: SettingsUpdate, user=Depends(get_current_user
 
 
 # ==================== SIGNATURES (per SMTP account) ====================
-LOGO_URL = "https://customer-assets-rejwkqb3.emergentagent.net/job_campaign-manager-94/artifacts/z4t8akkh_logo_smartize_azul.webp"
-
-
 @api.post("/smtp/test-send")
 async def smtp_test_send(payload: SmtpTestSendRequest, user=Depends(get_current_user)):
     smtp = await db.smtp_accounts.find_one({"_id": _oid(payload.smtp_account_id)})
@@ -656,6 +653,14 @@ async def smtp_test_send(payload: SmtpTestSendRequest, user=Depends(get_current_
         raise HTTPException(status_code=400, detail="Conta SMTP inválida")
     if not valid_email(payload.to_email):
         raise HTTPException(status_code=400, detail="Email de destino inválido")
+    settings = await db.settings.find_one({"key": "global"}) or {}
+    company = settings.get("company_name") or "Smartize"
+    logo = settings.get("logo_url") or ""
+    header = (
+        f'<img src="{logo}" alt="{company}" style="height:28px;margin-bottom:16px" />'
+        if logo.startswith("data:")
+        else f'<div style="font-weight:bold;font-size:18px;color:#0055FF;margin-bottom:16px">{company}</div>'
+    )
     sample = {"first_name": "João", "last_name": "Silva", "company": "Smartize",
               "position": "CEO", "email": payload.to_email, "phone": "+351 900 000 000",
               "city": "Lisboa", "country": "Portugal", "website": "smartize.pt", "custom_fields": {}}
@@ -664,13 +669,13 @@ async def smtp_test_send(payload: SmtpTestSendRequest, user=Depends(get_current_
     sig = substitute(sig or "", variables)
     body = (
         f'<div style="font-family:Arial,sans-serif">'
-        f'<img src="{LOGO_URL}" alt="Smartize" style="height:28px;margin-bottom:16px" />'
-        f'<p>Esta é uma mensagem de teste enviada pela plataforma Smartize Outreach.</p>'
-        f'<p>Confirma que a sua conta SMTP e assinatura estão a funcionar corretamente.</p>'
+        f'{header}'
+        f'<p>Esta é uma mensagem de teste enviada pela plataforma {company} Outreach.</p>'
+        f'<p>Confirma que a sua conta de email e assinatura estão a funcionar corretamente.</p>'
         f'<br/><div class="email-signature">{sig}</div></div>'
     )
     try:
-        await send_email(smtp, payload.to_email, "Teste de envio — Smartize Outreach", body, "Mensagem de teste da Smartize Outreach")
+        await send_email(smtp, payload.to_email, f"Teste de envio — {company} Outreach", body, "Mensagem de teste")
         return {"success": True, "message": f"Email de teste enviado para {payload.to_email}"}
     except Exception as e:
         return {"success": False, "message": f"Falha no envio: {str(e)}"}
