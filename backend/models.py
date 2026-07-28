@@ -141,13 +141,23 @@ class CampaignSettings(BaseModel):
     timezone: str = "Europe/Lisbon"
 
 
+class SequenceStep(BaseModel):
+    template_id: str
+    subject: Optional[str] = None
+    send_type: str = "new"  # new | reply
+    delay_days: int = 0
+    delay_hours: int = 0
+
+
 class CampaignCreate(BaseModel):
     name: str
     smtp_account_id: Optional[str] = None
     group_id: str
-    template_id: str
+    template_id: Optional[str] = None
     schedule_at: Optional[str] = None  # ISO string; None = send now
     settings: CampaignSettings = Field(default_factory=CampaignSettings)
+    is_sequence: bool = False
+    steps: List[SequenceStep] = Field(default_factory=list)
 
 
 class CampaignUpdate(BaseModel):

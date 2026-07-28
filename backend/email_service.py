@@ -87,6 +87,7 @@ async def send_email(
     subject: str,
     html_body: str,
     text_body: str,
+    in_reply_to: str = None,
 ):
     password = decrypt_secret(smtp_account.get("password_enc", ""))
     from_name = smtp_account.get("from_name", "")
@@ -102,6 +103,9 @@ async def send_email(
     reply_to = smtp_account.get("reply_to")
     if reply_to:
         msg["Reply-To"] = reply_to
+    if in_reply_to:
+        msg["In-Reply-To"] = in_reply_to
+        msg["References"] = in_reply_to
 
     if text_body:
         msg.attach(MIMEText(text_body, "plain", "utf-8"))

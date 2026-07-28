@@ -7,6 +7,7 @@ from starlette.middleware.cors import CORSMiddleware
 from core import db, client
 from auth import auth_router, seed_users
 from api import api
+from crm import crm, ensure_default_pipeline
 from worker import start_scheduler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -16,6 +17,7 @@ app = FastAPI(title="Smartize Outreach")
 
 app.include_router(auth_router)
 app.include_router(api)
+app.include_router(crm)
 
 app.add_middleware(
     CORSMiddleware,
@@ -29,6 +31,7 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup():
     await seed_users()
+    await ensure_default_pipeline()
     await db.users.create_index("email", unique=True)
     await db.contacts.create_index("email")
     await db.contacts.create_index("group_id")

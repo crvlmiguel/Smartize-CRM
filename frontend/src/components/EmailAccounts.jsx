@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
   Plus, Pencil, Trash2, Server, PlugZap, Loader2, Send, Zap, Star,
-  Power, Mail, CheckCircle2, XCircle, HelpCircle,
+  Power, Mail, CheckCircle2, XCircle, HelpCircle, RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -97,6 +97,14 @@ export default function EmailAccounts() {
 
   const setDefault = async (a) => { try { await api.post(`/smtp/${a.id}/set-default`); toast.success("Conta predefinida atualizada"); load(); } catch (e) { toast.error(apiError(e)); } };
   const disconnect = async (a) => { try { await api.post(`/smtp/${a.id}/disconnect`); toast.success("Conta desligada"); load(); } catch (e) { toast.error(apiError(e)); } };
+  const syncImap = async (a) => {
+    const t = toast.loading("A sincronizar respostas…");
+    try {
+      const { data } = await api.post(`/smtp/${a.id}/sync-imap`);
+      toast.success(`Sincronização concluída — ${data.replies_found} resposta(s) detetada(s)`, { id: t });
+      load();
+    } catch (e) { toast.error(apiError(e), { id: t }); }
+  };
   const confirmDelete = async () => { try { await api.delete(`/smtp/${toDelete.id}`); toast.success("Conta eliminada"); setToDelete(null); load(); } catch (e) { toast.error(apiError(e)); } };
 
   const isGoogle = form.account_type === "google";
@@ -146,6 +154,7 @@ export default function EmailAccounts() {
               </div>
               <div className="flex flex-wrap gap-1 mt-4 pt-3 border-t border-border">
                 <Button variant="outline" size="sm" onClick={() => openEdit(a)} data-testid={`edit-smtp-${a.id}`}><Pencil size={14} className="mr-1" /> Editar</Button>
+                {a.imap_host && <Button variant="outline" size="sm" onClick={() => syncImap(a)} data-testid={`sync-imap-${a.id}`}><RefreshCw size={14} className="mr-1" /> Sincronizar</Button>}
                 {!a.is_default && <Button variant="outline" size="sm" onClick={() => setDefault(a)} data-testid={`set-default-${a.id}`}><Star size={14} className="mr-1" /> Predefinir</Button>}
                 <Button variant="outline" size="sm" onClick={() => disconnect(a)} data-testid={`disconnect-${a.id}`}><Power size={14} /></Button>
                 <Button variant="outline" size="sm" onClick={() => setToDelete(a)} data-testid={`delete-smtp-${a.id}`} className="text-destructive"><Trash2 size={14} /></Button>

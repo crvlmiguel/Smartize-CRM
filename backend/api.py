@@ -10,7 +10,7 @@ from fastapi.responses import Response, RedirectResponse
 from core import db, now_utc, encrypt_secret
 from auth import get_current_user
 from email_service import build_variable_map, substitute, test_smtp_connection, send_email
-from worker import build_campaign_jobs
+from worker import build_campaign_jobs, build_enrollments
 from models import (
     ContactCreate, ContactUpdate, GroupCreate, GroupUpdate,
     TemplateCreate, TemplateUpdate, SmtpCreate, SmtpUpdate, SmtpTestRequest,
@@ -378,6 +378,21 @@ async def disconnect_smtp(smtp_id: str, user=Depends(get_current_user)):
     return {"ok": True}
 
 
+@api.post("/smtp/{smtp_id}/sync-imap")
+async def sync_imap(smtp_id: str, user=Depends(get_current_user)):
+    from imap_sync import sync_account
+    acc = await db.smtp_accounts.find_one({"_id": _oid(smtp_id)})
+    if not acc:
+        raise HTTPException(status_code=404, detail="Conta de email não encontrada")
+    if not acc.get("imap_host"):
+        raise HTTPException(status_code=400, detail="Esta conta não tem IMAP configurado")
+    found = await sync_account(acc)
+    updated = await db.smtp_accounts.find_one({"_id": _oid(smtp_id)})
+    if updated.get("imap_status") == "error":
+        raise HTTPException(status_code=400, detail=f"Falha IMAP: {updated.get('imap_error')}")
+    return {"ok": True, "replies_found": found, "last_sync": updated.get("last_sync")}
+
+
 @api.post("/smtp/test")
 async def test_smtp(payload: SmtpTestRequest, user=Depends(get_current_user)):
     from core import decrypt_secret
@@ -505,7 +520,13 @@ async def start_campaign(campaign_id: str, user=Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="Nenhum contacto válido no grupo selecionado")
 
     await db.email_jobs.delete_many({"campaign_id": campaign_id})
-    count = await build_campaign_jobs(campaign, valid)
+    await db.campaign_contacts.delete_many({"campaign_id": campaign_id})
+    if campaign.get("is_sequence") and campaign.get("steps"):
+        count = await build_enrollments(campaign, valid)
+    else:
+        if not campaign.get("template_id"):
+            raise HTTPException(status_code=400, detail="Campanha sem template")
+        count = await build_campaign_jobs(campaign, valid)
     await db.campaigns.update_one({"_id": campaign["_id"]}, {"$set": {
         "status": "sending", "started_at": now_utc().isoformat(), "total_recipients": count,
     }})
@@ -516,6 +537,7 @@ async def start_campaign(campaign_id: str, user=Depends(get_current_user)):
 async def cancel_campaign(campaign_id: str, user=Depends(get_current_user)):
     await db.campaigns.update_one({"_id": _oid(campaign_id)}, {"$set": {"status": "cancelada"}})
     await db.email_jobs.update_many({"campaign_id": campaign_id, "status": "pending"}, {"$set": {"status": "cancelled"}})
+    await db.campaign_contacts.update_many({"campaign_id": campaign_id, "status": "active"}, {"$set": {"status": "stopped", "stop_reason": "Campanha cancelada"}})
     return {"ok": True}
 
 
