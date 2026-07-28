@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, Upload, Search, X } from "lucide-react";
+import { Plus, Pencil, Trash2, Upload, Search, X, Briefcase } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -76,6 +76,13 @@ export default function Contacts() {
   const confirmDelete = async () => {
     try { await api.delete(`/contacts/${toDelete.id}`); toast.success("Contacto eliminado"); setToDelete(null); load(); }
     catch (e) { toast.error(apiError(e)); }
+  };
+
+  const convertToDeal = async (c) => {
+    try {
+      await api.post(`/contacts/${c.id}/convert`);
+      toast.success("Negócio criado a partir do contacto. Veja em Negócios.");
+    } catch (e) { toast.error(apiError(e)); }
   };
 
   const doImport = async () => {
@@ -154,6 +161,7 @@ export default function Contacts() {
                   <TableCell>{groupName(c.group_id)}</TableCell>
                   <TableCell><StatusBadge status={c.status} /></TableCell>
                   <TableCell className="text-right">
+                    <button onClick={() => convertToDeal(c)} data-testid={`convert-contact-${c.id}`} title="Criar negócio" className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground hover:text-primary"><Briefcase size={15} /></button>
                     <button onClick={() => openEdit(c)} data-testid={`edit-contact-${c.id}`} className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground"><Pencil size={15} /></button>
                     <button onClick={() => setToDelete(c)} data-testid={`delete-contact-${c.id}`} className="p-1.5 rounded-md hover:bg-secondary text-destructive"><Trash2 size={15} /></button>
                   </TableCell>

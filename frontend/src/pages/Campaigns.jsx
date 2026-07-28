@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
-  Plus, Play, Copy, Ban, Archive, Eye, Send, ChevronRight, ChevronLeft, Trash2,
+  Plus, Play, Copy, Ban, Archive, Eye, Send, ChevronRight, ChevronLeft, Trash2, Layers,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +38,7 @@ export default function Campaigns() {
     return {
       name: "", smtp_account_id: "", group_id: "", template_id: "",
       scheduleMode: "now", schedule_at: "", settings: { ...DEFAULT_SETTINGS },
+      is_sequence: false, steps: [],
     };
   }
 
@@ -55,7 +56,17 @@ export default function Campaigns() {
     name: form.name,
     smtp_account_id: form.smtp_account_id,
     group_id: form.group_id,
-    template_id: form.template_id,
+    template_id: form.is_sequence ? null : form.template_id,
+    is_sequence: form.is_sequence,
+    steps: form.is_sequence
+      ? form.steps.map((s) => ({
+          template_id: s.template_id,
+          subject: s.subject?.trim() ? s.subject : null,
+          send_type: s.send_type || "new",
+          delay_days: Number(s.delay_days) || 0,
+          delay_hours: Number(s.delay_hours) || 0,
+        }))
+      : [],
     schedule_at: form.scheduleMode === "schedule" && form.schedule_at
       ? new Date(form.schedule_at).toISOString() : null,
     settings: {
@@ -73,10 +84,42 @@ export default function Campaigns() {
     if (!form.name.trim()) return "Indique um nome";
     if (!form.smtp_account_id) return "Selecione uma conta SMTP";
     if (!form.group_id) return "Selecione um grupo";
-    if (!form.template_id) return "Selecione um template";
+    if (form.is_sequence) {
+      if (!form.steps.length) return "Adicione pelo menos um passo à sequência";
+      if (form.steps.some((s) => !s.template_id)) return "Cada passo precisa de um template";
+    } else if (!form.template_id) {
+      return "Selecione um template";
+    }
     if (form.scheduleMode === "schedule" && !form.schedule_at) return "Indique data de agendamento";
     return null;
   };
+
+  const addStep = () =>
+    setForm((f) => ({
+      ...f,
+      steps: [
+        ...f.steps,
+        {
+          template_id: "",
+          subject: "",
+          send_type: f.steps.length === 0 ? "new" : "reply",
+          delay_days: f.steps.length === 0 ? 0 : 2,
+          delay_hours: 0,
+        },
+      ],
+    }));
+  const updateStep = (i, k, v) =>
+    setForm((f) => ({ ...f, steps: f.steps.map((s, idx) => (idx === i ? { ...s, [k]: v } : s)) }));
+  const removeStep = (i) =>
+    setForm((f) => ({ ...f, steps: f.steps.filter((_, idx) => idx !== i) }));
+  const toggleSequence = (on) =>
+    setForm((f) => ({
+      ...f,
+      is_sequence: on,
+      steps: on && f.steps.length === 0
+        ? [{ template_id: f.template_id || "", subject: "", send_type: "new", delay_days: 0, delay_hours: 0 }]
+        : f.steps,
+    }));
 
   const create = async (startNow) => {
     const err = validate();
@@ -164,7 +207,7 @@ export default function Campaigns() {
           </div>
 
           {step === 1 && (
-            <div className="space-y-4" data-testid="wizard-step-1">
+            <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1" data-testid="wizard-step-1">
               <div><Label>Nome da campanha</Label><Input value={form.name} data-testid="campaign-name-input" onChange={(e) => setForm({ ...form, name: e.target.value })} className="mt-1.5" /></div>
               <div>
                 <Label>Conta SMTP</Label>
@@ -180,13 +223,69 @@ export default function Campaigns() {
                   <SelectContent>{groups.map((g) => <SelectItem key={g.id} value={g.id}>{g.name} ({g.contact_count})</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <div>
-                <Label>Template</Label>
-                <Select value={form.template_id} onValueChange={(v) => setForm({ ...form, template_id: v })}>
-                  <SelectTrigger className="mt-1.5" data-testid="campaign-template-select"><SelectValue placeholder="Selecionar template" /></SelectTrigger>
-                  <SelectContent>{templates.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}</SelectContent>
-                </Select>
+
+              <div className="flex items-center justify-between rounded-md border border-border p-3">
+                <div className="flex items-center gap-2">
+                  <Layers size={16} className="text-primary" />
+                  <div>
+                    <Label className="cursor-pointer">Ativar sequência de emails</Label>
+                    <p className="text-xs text-muted-foreground">Envie follow-ups automáticos que param quando o contacto responde.</p>
+                  </div>
+                </div>
+                <Switch checked={form.is_sequence} data-testid="sequence-switch" onCheckedChange={toggleSequence} />
               </div>
+
+              {!form.is_sequence ? (
+                <div>
+                  <Label>Template</Label>
+                  <Select value={form.template_id} onValueChange={(v) => setForm({ ...form, template_id: v })}>
+                    <SelectTrigger className="mt-1.5" data-testid="campaign-template-select"><SelectValue placeholder="Selecionar template" /></SelectTrigger>
+                    <SelectContent>{templates.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+              ) : (
+                <div className="space-y-3" data-testid="sequence-builder">
+                  {form.steps.map((st, i) => (
+                    <div key={i} className="rounded-md border border-border p-3 space-y-3 bg-secondary/30" data-testid={`sequence-step-${i}`}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-heading font-bold flex items-center gap-1.5">
+                          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary text-primary-foreground text-[11px]">{i + 1}</span>
+                          {i === 0 ? "Email inicial" : `Follow-up ${i}`}
+                        </span>
+                        {form.steps.length > 1 && (
+                          <button onClick={() => removeStep(i)} data-testid={`remove-step-${i}`} className="p-1 rounded hover:bg-secondary text-destructive"><Trash2 size={14} /></button>
+                        )}
+                      </div>
+                      {i > 0 && (
+                        <div className="grid grid-cols-2 gap-3">
+                          <div><Label className="text-xs">Atraso (dias)</Label><Input type="number" min="0" value={st.delay_days} data-testid={`step-delay-days-${i}`} onChange={(e) => updateStep(i, "delay_days", e.target.value)} className="mt-1" /></div>
+                          <div><Label className="text-xs">Atraso (horas)</Label><Input type="number" min="0" value={st.delay_hours} onChange={(e) => updateStep(i, "delay_hours", e.target.value)} className="mt-1" /></div>
+                        </div>
+                      )}
+                      <div>
+                        <Label className="text-xs">Template</Label>
+                        <Select value={st.template_id} onValueChange={(v) => updateStep(i, "template_id", v)}>
+                          <SelectTrigger className="mt-1" data-testid={`step-template-select-${i}`}><SelectValue placeholder="Selecionar template" /></SelectTrigger>
+                          <SelectContent>{templates.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}</SelectContent>
+                        </Select>
+                      </div>
+                      {i > 0 && (
+                        <div>
+                          <Label className="text-xs">Tipo de envio</Label>
+                          <Select value={st.send_type} onValueChange={(v) => updateStep(i, "send_type", v)}>
+                            <SelectTrigger className="mt-1" data-testid={`step-sendtype-select-${i}`}><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="reply">Responder ao email anterior (mesma thread)</SelectItem>
+                              <SelectItem value="new">Novo email</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  <Button variant="outline" size="sm" onClick={addStep} data-testid="add-step-button" className="w-full"><Plus size={14} className="mr-1" /> Adicionar passo</Button>
+                </div>
+              )}
             </div>
           )}
 

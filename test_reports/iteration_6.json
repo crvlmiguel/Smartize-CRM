@@ -1,0 +1,51 @@
+{
+  "summary": "Iteration 6 (CRM Kanban 'Negócios', automações, converter contacto, campanhas com sequências) tested end-to-end. Backend: new pytest suite /app/backend/tests/test_iter6.py — 19/20 pass. Covered: GET /api/pipelines (default pipeline auto-created with the 7 pt-PT stages, 401 unauth), deals CRUD (create defaults to first stage + status open + history 'Negócio criado', update/GET persistence, delete→404, 400 on bad id, pipeline_id filter, no _id leakage), POST /api/deals/{id}/move (open/won/lost transitions, lost_reason persisted, history entry, 400 on invalid stage, 404 unknown deal), POST /api/contacts/{id}/convert (deal created with contact name/email/company, appears in GET /api/deals, 404 unknown), automations CRUD + engine (add_tag fires on deal_created, create_task fires on deal_won), sequence campaigns (is_sequence + steps persisted incl. send_type=reply/delay_days/delay_hours, start → status 'sending', total_recipients, 2 campaign_contacts enrollments with current_step=0/status active/next_send_at/smtp_account_id, cancel → enrollment status 'stopped', re-start rejected 400, sequence without steps rejected 400) and simple campaign (start OK, 2 recipients). Worker verified: process_sequences runs every 12s and does create email_jobs per step (they fail only because the preview SMTP host is fake — expected). Regression: backend_test.py 46/46 pass. Frontend: login OK, menu item 'Negócios' (nav-negócios) opens the Kanban (negocios-page) with the 7 stages, new/edit/delete deal work, real HTML5 drag&drop of a card from 'Novo contacto' to 'Reunião marcada' works with mouse, Automações tab creates an automation (event + send_email + template) which appears in the list, Contactos convert-contact-<id> creates the deal and it shows up in the Kanban, campaign wizard sequence-switch reveals sequence-builder (1 initial step, add-step-button adds a follow-up defaulting to 2 days + 'Responder ao email anterior (mesma thread)'), step template selects work, save-draft + Iniciar → toast '3 destinatários' and status 'A enviar'; simple campaign (create-start-button) also works; client-side validation blocks a sequence step without template.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "DELETE /api/campaigns/{id}", "issue": "Only email_jobs are deleted; campaign_contacts (enrollments) are left orphaned. Orphans stay status='active' with a past next_send_at, so process_sequences re-reads them on every 12s cycle and only 'continue's without marking them — they permanently occupy the head of the sorted 50-doc batch (found 13 orphans, 3 still 'active', in the preview DB). Fix: db.campaign_contacts.delete_many({campaign_id}) on delete, and in worker.process_sequences mark enrollments whose campaign no longer exists as status='stopped'. Reproduced by test_iter6.py::TestEnrollmentCleanup (the only failing test)."},
+      {"endpoint": "GET /api/campaigns and /api/campaigns/{id}", "issue": "_campaign_stats is computed only from email_jobs, so a freshly started SEQUENCE campaign shows '0/0 enviados' / '0 destinatários · 0 na fila' even though N enrollments exist and total_recipients=N. Stats/queue should also count campaign_contacts (active/completed/stopped) for is_sequence campaigns."},
+      {"endpoint": "GET /api/campaigns/{id} (detail page)", "issue": "For sequence campaigns the 'Destinatários' table is empty and there is no per-step / enrollment progress view (current_step, next_send_at, stop_reason) until the worker sends the first step."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Campanhas → detalhe de campanha com sequência", "issue": "Após iniciar, o toast indica '3 destinatários' mas a lista e o detalhe mostram '0/0 enviados' e '0 destinatários · 0 na fila' (consequência do gap de stats no backend) — parece ao utilizador que nada foi criado.", "affected_selectors": ["campaign-row-<id>", "[data-testid='campaigns-page']"]}
+    ],
+    "design_issues": [
+      {"screen": "Negócios (Kanban)", "issues": ["delete-deal-<id> elimina o negócio imediatamente sem diálogo de confirmação (ação destrutiva) — considerar AlertDialog", "Durante ~1s após o load, o pipeline-select mostra o placeholder 'Pipeline' e nenhuma etapa é renderizada (sem skeleton/loading state)"]},
+      {"screen": "Nova campanha (wizard, passo 1)", "issues": ["O select de conta SMTP não pré-seleciona a conta predefinida, e a validação bloqueia com 'Selecione uma conta SMTP' embora o backend já use a conta default — pré-preencher com a conta is_default melhora o fluxo"]},
+      {"screen": "Diálogos (deal-dialog, automation-dialog, campaign-dialog)", "issues": ["Warning de acessibilidade no console: 'Missing Description or aria-describedby for DialogContent' — adicionar DialogDescription"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter6.py",
+    "/app/test_reports/pytest/iter6_results.xml"
+  ],
+  "action_items": [
+    "DELETE /api/campaigns/{id}: apagar também db.campaign_contacts do campaign_id; em worker.process_sequences marcar enrollments sem campanha como status='stopped' (evita bloqueio permanente do batch de 50).",
+    "Incluir contagem de campaign_contacts nas stats/fila das campanhas com is_sequence (lista + página de detalhe), para não mostrar 0/0 depois de iniciar.",
+    "Mostrar progresso da sequência na página de detalhe (passo atual, próximo envio, motivo de paragem) e listar enrollments quando ainda não há email_jobs.",
+    "Adicionar confirmação antes de eliminar um negócio no Kanban e pré-selecionar a conta SMTP default no wizard de campanhas.",
+    "Adicionar DialogDescription aos diálogos para eliminar os warnings de acessibilidade."
+  ],
+  "critical_code_review_comments": [
+    "worker.process_sequences: enrollments cujo campaign/campaign.status!='sending' fazem 'continue' sem qualquer update — ficam sempre elegíveis e, com sort(next_send_at)+limit 50, podem esfomear enrollments válidos. Marcar como 'stopped'/'paused'.",
+    "crm.update_deal / update_automation: usam exclude_none e não validam existência do documento — PUT a um id inexistente devolve 200 com body 'null' em vez de 404 (o teste não falhou porque só usei ids válidos, mas é um risco).",
+    "crm.move_deal: quando a etapa é 'lost' e não é enviado lost_reason, o campo anterior mantém-se (não é limpo); em 'won' o lost_reason antigo também não é limpo.",
+    "crm.s()/api.serialize: confirmado que _id nunca é exposto (id string).",
+    "crm._automation_send_email: falha silenciosa (logger.warning) quando não há SMTP/template — sem registo no histórico do negócio; considerar registar 'Automação falhou' no history para visibilidade."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter6.py",
+    "/app/test_reports/iteration_6.json"
+  ],
+  "success_rate": {"backend": "95% (19/20 novos; 1 falha = orphan enrollments no delete de campanha) + 46/46 regressão", "frontend": "100% dos fluxos da iteração (CRM, automações, converter contacto, sequências, campanha simples)"},
+  "seed_data_creation": "A DB do preview estava vazia (sem SMTP/templates/contactos). Criei seed permanente para UI: conta SMTP 'QA SMTP' (host fictício smtp.example.com, is_default), templates 'QA Template 1/2', grupo 'QA Grupo UI' com 3 contactos qa_ui1..3@example.com. Todos os deals/automações/campanhas/enrollments criados durante os testes foram eliminados.",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "carlos.miguel@smartize.pt / 100%Smartize",
+  "context_for_next_testing_agent": "Correr `pytest tests/test_iter6.py -n 0` (serial, estado partilhado por sessão). O único teste que falha (TestEnrollmentCleanup) documenta o bug de campaign_contacts órfãos — deve passar após o fix. SMTP do preview é fictício: os email_jobs das sequências ficam 'failed' com 'Name or service not known' — normal; validar apenas status 'sending' + enrollments. Se aparecerem enrollments órfãos, limpar com db.campaign_contacts.delete_many({}). Seed 'QA SMTP'/'QA Template 1-2'/'QA Grupo UI' (3 contactos) foi deixado na DB para testes de UI.",
+  "rca_of_the_issue": "Orphan enrollments: api.delete_campaign remove apenas email_jobs; worker.process_sequences filtra por status='active' e next_send_at<=agora, e quando a campanha não existe faz 'continue' sem alterar o documento, pelo que esses enrollments permanecem elegíveis para sempre e, por estarem no topo da ordenação por next_send_at, consomem o batch (to_list(50)) em cada ciclo. Stats a 0/0: _campaign_stats deriva todas as métricas de email_jobs, que só passam a existir quando o worker envia o 1º passo da sequência."
+}

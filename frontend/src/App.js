@@ -11,6 +11,7 @@ import Groups from "@/pages/Groups";
 import Templates from "@/pages/Templates";
 import Campaigns from "@/pages/Campaigns";
 import CampaignDetail from "@/pages/CampaignDetail";
+import Negocios from "@/pages/Negocios";
 import Statistics from "@/pages/Statistics";
 import Settings from "@/pages/Settings";
 import NotFound from "@/pages/NotFound";
@@ -52,6 +53,7 @@ function App() {
                 <Route path="templates" element={<Templates />} />
                 <Route path="campanhas" element={<Campaigns />} />
                 <Route path="campanhas/:id" element={<CampaignDetail />} />
+                <Route path="negocios" element={<Negocios />} />
                 <Route path="estatisticas" element={<Statistics />} />
                 <Route path="configuracoes" element={<Settings />} />
                 <Route path="smtp" element={<Navigate to="/configuracoes" replace />} />
