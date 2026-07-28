@@ -32,6 +32,7 @@ export default function Campaigns() {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState(1);
   const [form, setForm] = useState(base());
+  const [defaultSmtpId, setDefaultSmtpId] = useState("");
   const navigate = useNavigate();
 
   function base() {
@@ -45,12 +46,16 @@ export default function Campaigns() {
   const load = () => api.get("/campaigns").then((r) => setCampaigns(r.data)).catch(() => {});
   useEffect(() => {
     load();
-    api.get("/smtp").then((r) => setSmtp(r.data)).catch(() => {});
+    api.get("/smtp").then((r) => {
+      setSmtp(r.data);
+      const def = r.data.find((a) => a.is_default) || r.data[0];
+      if (def) setDefaultSmtpId(def.id);
+    }).catch(() => {});
     api.get("/groups").then((r) => setGroups(r.data)).catch(() => {});
     api.get("/templates").then((r) => setTemplates(r.data)).catch(() => {});
   }, []);
 
-  const openNew = () => { setForm(base()); setStep(1); setOpen(true); };
+  const openNew = () => { setForm({ ...base(), smtp_account_id: defaultSmtpId }); setStep(1); setOpen(true); };
 
   const buildPayload = () => ({
     name: form.name,

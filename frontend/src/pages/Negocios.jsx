@@ -8,6 +8,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import api, { apiError } from "@/lib/api";
 import { PageHeader } from "@/components/common";
 
@@ -37,6 +41,7 @@ export default function Negocios() {
   const [drag, setDrag] = useState(null);
   const [autoOpen, setAutoOpen] = useState(false);
   const [autoForm, setAutoForm] = useState(null);
+  const [dealToDelete, setDealToDelete] = useState(null);
 
   const pipeline = pipelines.find((p) => p.id === pid);
 
@@ -66,7 +71,7 @@ export default function Negocios() {
     } catch (e) { toast.error(apiError(e)); }
   };
 
-  const removeDeal = async (d) => { try { await api.delete(`/deals/${d.id}`); toast.success("Negócio eliminado"); loadDeals(); } catch (e) { toast.error(apiError(e)); } };
+  const removeDeal = async (d) => { try { await api.delete(`/deals/${d.id}`); toast.success("Negócio eliminado"); setDealToDelete(null); loadDeals(); } catch (e) { toast.error(apiError(e)); } };
 
   const onDrop = async (stageId) => {
     if (!drag || drag.stage_id === stageId) { setDrag(null); return; }
@@ -137,7 +142,7 @@ export default function Negocios() {
                         <span className="text-xs font-mono text-primary flex items-center gap-0.5"><Euro size={11} />{Number(d.value || 0).toLocaleString("pt-PT")}</span>
                         <div className="flex gap-0.5">
                           <button onClick={() => openEdit(d)} data-testid={`edit-deal-${d.id}`} className="p-1 rounded hover:bg-secondary text-muted-foreground"><Pencil size={13} /></button>
-                          <button onClick={() => removeDeal(d)} data-testid={`delete-deal-${d.id}`} className="p-1 rounded hover:bg-secondary text-destructive"><Trash2 size={13} /></button>
+                          <button onClick={() => setDealToDelete(d)} data-testid={`delete-deal-${d.id}`} className="p-1 rounded hover:bg-secondary text-destructive"><Trash2 size={13} /></button>
                         </div>
                       </div>
                       {d.tags?.length > 0 && <div className="flex flex-wrap gap-1 mt-2">{d.tags.map((t) => <span key={t} className="text-[10px] bg-primary/10 text-primary rounded px-1.5">{t}</span>)}</div>}
@@ -236,6 +241,19 @@ export default function Negocios() {
           <DialogFooter><Button variant="outline" onClick={() => setAutoOpen(false)}>Cancelar</Button><Button onClick={saveAuto} data-testid="save-automation-button">Guardar</Button></DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!dealToDelete} onOpenChange={(o) => !o && setDealToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar negócio?</AlertDialogTitle>
+            <AlertDialogDescription>Esta ação não pode ser revertida. O negócio "{dealToDelete?.name}" será removido.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => removeDeal(dealToDelete)} data-testid="confirm-delete-deal">Eliminar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -233,6 +233,9 @@ async def get_deal(did: str, user=Depends(get_current_user)):
 
 @crm.put("/deals/{did}")
 async def update_deal(did: str, payload: DealUpdate, user=Depends(get_current_user)):
+    existing = await db.deals.find_one({"_id": _oid(did)})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Negócio não encontrado")
     updates = {k: v for k, v in payload.model_dump(exclude_none=True).items()}
     await db.deals.update_one({"_id": _oid(did)}, {"$set": updates})
     return s(await db.deals.find_one({"_id": _oid(did)}))
@@ -258,10 +261,12 @@ async def move_deal(did: str, payload: MoveDeal, user=Depends(get_current_user))
     status = "open"
     if stage["type"] == "won":
         status = "won"
+        updates["lost_reason"] = None
     elif stage["type"] == "lost":
         status = "lost"
-        if payload.lost_reason:
-            updates["lost_reason"] = payload.lost_reason
+        updates["lost_reason"] = payload.lost_reason or ""
+    else:
+        updates["lost_reason"] = None
     updates["status"] = status
     await db.deals.update_one({"_id": _oid(did)}, {"$set": updates})
     await _add_history(did, f"Movido para '{stage['name']}'")
@@ -349,6 +354,9 @@ async def create_automation(payload: AutomationCreate, user=Depends(get_current_
 
 @crm.put("/automations/{aid}")
 async def update_automation(aid: str, payload: AutomationUpdate, user=Depends(get_current_user)):
+    existing = await db.automations.find_one({"_id": _oid(aid)})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Automação não encontrada")
     updates = {k: v for k, v in payload.model_dump(exclude_none=True).items()}
     await db.automations.update_one({"_id": _oid(aid)}, {"$set": updates})
     return s(await db.automations.find_one({"_id": _oid(aid)}))

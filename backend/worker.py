@@ -244,7 +244,11 @@ async def process_sequences():
         }).sort("next_send_at", 1).to_list(50)
         for enr in enrollments:
             campaign = await db.campaigns.find_one({"_id": ObjectId(enr["campaign_id"])})
-            if not campaign or campaign.get("status") != "sending":
+            if not campaign:
+                await db.campaign_contacts.update_one({"_id": enr["_id"]}, {"$set": {"status": "stopped", "stop_reason": "Campanha eliminada"}})
+                continue
+            if campaign.get("status") != "sending":
+                await db.campaign_contacts.update_one({"_id": enr["_id"]}, {"$set": {"status": "stopped", "stop_reason": "Campanha não ativa"}})
                 continue
             contact = await db.contacts.find_one({"_id": ObjectId(enr["contact_id"])})
             if not contact:

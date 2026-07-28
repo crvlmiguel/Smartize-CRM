@@ -40,7 +40,8 @@ export default function CampaignDetail() {
   };
 
   if (!data) return <div className="text-muted-foreground">A carregar…</div>;
-  const { campaign, stats, recipients } = data;
+  const { campaign, stats, recipients, enrollments = [] } = data;
+  const isSequence = campaign.is_sequence;
 
   return (
     <div data-testid="campaign-detail-page">
@@ -76,6 +77,36 @@ export default function CampaignDetail() {
           </div>
         ))}
       </div>
+
+      {isSequence && enrollments.length > 0 && (
+        <div className="bg-card border border-border rounded-md overflow-hidden mb-6" data-testid="sequence-progress">
+          <div className="px-4 py-3 border-b border-border"><h2 className="font-heading font-bold">Progresso da sequência</h2></div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Nome</TableHead>
+                <TableHead>Email</TableHead>
+                <TableHead>Passo</TableHead>
+                <TableHead>Estado</TableHead>
+                <TableHead>Próximo envio</TableHead>
+                <TableHead>Motivo de paragem</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {enrollments.map((e) => (
+                <TableRow key={e.id} data-testid={`enrollment-row-${e.id}`}>
+                  <TableCell className="font-medium">{e.name || "—"}</TableCell>
+                  <TableCell className="font-mono text-xs">{e.email}</TableCell>
+                  <TableCell>{Math.min(e.current_step + 1, e.steps_total)}/{e.steps_total}</TableCell>
+                  <TableCell><StatusBadge status={e.status} /></TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{e.status === "active" && e.next_send_at ? new Date(e.next_send_at).toLocaleString("pt-PT") : "—"}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{e.stop_reason || "—"}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
 
       <div className="bg-card border border-border rounded-md overflow-hidden">
         <div className="px-4 py-3 border-b border-border"><h2 className="font-heading font-bold">Destinatários</h2></div>

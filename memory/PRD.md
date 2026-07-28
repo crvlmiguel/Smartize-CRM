@@ -37,6 +37,13 @@ Fluxo: SMTP → Contactos → Grupos → Template → Campanha → Enviar/Agenda
 ## Backlog / Próximos passos
 - **P1**: Paginação em /contacts; validar 404 em cancel/archive/delete/reply de campanha inexistente; agregação para dashboard daily (perf).
 - **P1**: Rotação automática entre várias contas SMTP na mesma campanha.
-- **P2**: Deteção automática de respostas (IMAP) para parar sequências; verificação externa de emails.
 - **P2**: Campos personalizados na UI de contactos; slugs ASCII nos nav-testids.
-- **P3 (futuro)**: CRM, IA, sequências multi-step, SMS/WhatsApp.
+- **P3 (futuro)**: IA, SMS/WhatsApp.
+
+## Iteração 6 — CRM + Sequências (2026-07-28)
+- **Campanhas com Sequências**: wizard passo 1 com interruptor "Ativar sequência de emails"; construtor de passos (email inicial + N follow-ups) com template, atraso (dias/horas) e tipo de envio (novo email / responder na mesma thread). Backend `is_sequence`+`steps` (SequenceStep). Worker `process_sequences`/`build_enrollments` envia por contacto e para automaticamente quando o contacto responde (respondido/bounce/descadastrado).
+- **CRM de Negócios (Kanban)** em `/negocios`: pipelines com etapas pt-PT, deals com valor/probabilidade/data de fecho, drag&drop entre etapas, histórico, converter contacto → negócio (botão nos Contactos, endpoint `/api/contacts/{id}/convert`).
+- **Automações do CRM**: separador Automações (QUANDO evento → EXECUTAR ação por etapa): add_tag, create_task, change_stage, create_project, send_email (com atraso via `automation_jobs`).
+- **Correções (test iter6)**: DELETE campanha remove `campaign_contacts`; worker marca enrollments órfãos como `stopped`; `_campaign_stats` conta enrollments para campanhas de sequência (fim do 0/0); página de detalhe mostra "Progresso da sequência" (passo/estado/próximo envio/motivo de paragem); PUT deal/automação inexistente → 404; `move_deal` limpa `lost_reason` em etapas won/open; confirmação ao eliminar negócio; conta SMTP default pré-selecionada no wizard.
+- **Testado**: frontend 100% dos fluxos (iteration_6.json); backend 19/20 (1 falha = colisão de dados no ficheiro de teste, não código) + delete-enrollments verificado via API; regressão 46/46.
+

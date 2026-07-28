@@ -424,6 +424,17 @@ async def _campaign_stats(campaign_id: str) -> dict:
     clicked = await db.email_jobs.count_documents({"campaign_id": campaign_id, "clicked_at": {"$ne": None}})
     replied = await db.email_jobs.count_documents({"campaign_id": campaign_id, "replied": True})
     pending = await db.email_jobs.count_documents({"campaign_id": campaign_id, "status": "pending"})
+
+    # Sequence campaigns are tracked per-contact via enrollments (campaign_contacts).
+    # Present recipient-level metrics so the UI never shows a misleading 0/0.
+    enr_total = await db.campaign_contacts.count_documents({"campaign_id": campaign_id})
+    if enr_total:
+        total = enr_total
+        active = await db.campaign_contacts.count_documents({"campaign_id": campaign_id, "status": "active"})
+        sent = len(await db.email_jobs.distinct("contact_id", {"campaign_id": campaign_id, "status": {"$in": SENT_STATUSES}}))
+        opened = len(await db.email_jobs.distinct("contact_id", {"campaign_id": campaign_id, "opened_at": {"$ne": None}}))
+        clicked = len(await db.email_jobs.distinct("contact_id", {"campaign_id": campaign_id, "clicked_at": {"$ne": None}}))
+        pending = active
     delivered = sent
     return {
         "total": total, "sent": sent, "delivered": delivered, "bounced": bounced,
@@ -490,6 +501,7 @@ async def update_campaign(campaign_id: str, payload: CampaignUpdate, user=Depend
 async def delete_campaign(campaign_id: str, user=Depends(get_current_user)):
     await db.campaigns.delete_one({"_id": _oid(campaign_id)})
     await db.email_jobs.delete_many({"campaign_id": campaign_id})
+    await db.campaign_contacts.delete_many({"campaign_id": campaign_id})
     return {"ok": True}
 
 
@@ -590,7 +602,23 @@ async def campaign_stats(campaign_id: str, user=Depends(get_current_user)):
             "replied": j.get("replied", False),
             "error": j.get("error"),
         })
-    return {"campaign": serialize(campaign), "stats": stats, "recipients": recipients}
+    enrollments = []
+    if campaign.get("is_sequence"):
+        steps_total = len(campaign.get("steps", []))
+        enrs = await db.campaign_contacts.find({"campaign_id": campaign_id}).to_list(100000)
+        for e in enrs:
+            contact = await db.contacts.find_one({"_id": _oid(e["contact_id"])}) if e.get("contact_id") else None
+            enrollments.append({
+                "id": str(e["_id"]),
+                "email": e.get("to_email"),
+                "name": ((contact.get("first_name", "") + " " + contact.get("last_name", "")).strip() if contact else ""),
+                "current_step": e.get("current_step", 0),
+                "steps_total": steps_total,
+                "status": e.get("status"),
+                "next_send_at": e.get("next_send_at"),
+                "stop_reason": e.get("stop_reason"),
+            })
+    return {"campaign": serialize(campaign), "stats": stats, "recipients": recipients, "enrollments": enrollments}
 
 
 @api.post("/campaigns/{campaign_id}/contacts/{contact_id}/reply")

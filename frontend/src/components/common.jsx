@@ -31,6 +31,8 @@ const STATUS_STYLES = {
   completed: "bg-emerald-50 text-emerald-700 border-emerald-200",
   cancelada: "bg-red-50 text-red-700 border-red-200",
   arquivada: "bg-zinc-100 text-zinc-500 border-zinc-200",
+  active: "bg-amber-50 text-amber-700 border-amber-200",
+  stopped: "bg-zinc-100 text-zinc-600 border-zinc-200",
 };
 
 const STATUS_LABELS = {
@@ -40,6 +42,7 @@ const STATUS_LABELS = {
   cancelled: "Cancelado", rascunho: "Rascunho",
   completed: "Concluída", cancelada: "Cancelada", arquivada: "Arquivada",
   ativo: "Ativo", respondido: "Respondido", bounce: "Bounce", descadastrado: "Descadastrado",
+  active: "Em sequência", stopped: "Parado",
 };
 
 export function StatusBadge({ status }) {
