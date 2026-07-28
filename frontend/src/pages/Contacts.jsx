@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2, Upload, Search, X, Briefcase } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,7 @@ const EMPTY = {
 };
 
 export default function Contacts() {
+  const navigate = useNavigate();
   const [contacts, setContacts] = useState([]);
   const [groups, setGroups] = useState([]);
   const [search, setSearch] = useState("");
@@ -78,11 +80,8 @@ export default function Contacts() {
     catch (e) { toast.error(apiError(e)); }
   };
 
-  const convertToDeal = async (c) => {
-    try {
-      await api.post(`/contacts/${c.id}/convert`);
-      toast.success("Negócio criado a partir do contacto. Veja em Negócios.");
-    } catch (e) { toast.error(apiError(e)); }
+  const createDealFromContact = (c) => {
+    navigate("/negocios", { state: { contact: c } });
   };
 
   const doImport = async () => {
@@ -161,7 +160,7 @@ export default function Contacts() {
                   <TableCell>{groupName(c.group_id)}</TableCell>
                   <TableCell><StatusBadge status={c.status} /></TableCell>
                   <TableCell className="text-right">
-                    <button onClick={() => convertToDeal(c)} data-testid={`convert-contact-${c.id}`} title="Criar negócio" className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground hover:text-primary"><Briefcase size={15} /></button>
+                    <button onClick={() => createDealFromContact(c)} data-testid={`convert-contact-${c.id}`} title="Criar negócio" className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground hover:text-primary"><Briefcase size={15} /></button>
                     <button onClick={() => openEdit(c)} data-testid={`edit-contact-${c.id}`} className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground"><Pencil size={15} /></button>
                     <button onClick={() => setToDelete(c)} data-testid={`delete-contact-${c.id}`} className="p-1.5 rounded-md hover:bg-secondary text-destructive"><Trash2 size={15} /></button>
                   </TableCell>

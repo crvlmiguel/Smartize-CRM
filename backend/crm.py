@@ -34,6 +34,8 @@ class Stage(BaseModel):
     id: str
     name: str
     type: str = "open"  # open | won | lost
+    color: str = "#64748b"
+    probability: int = 0
 
 
 class PipelineCreate(BaseModel):
@@ -49,6 +51,7 @@ class PipelineUpdate(BaseModel):
 class DealCreate(BaseModel):
     name: str
     contact_id: Optional[str] = None
+    contact_name: str = ""
     pipeline_id: Optional[str] = None
     stage_id: Optional[str] = None
     company: str = ""
@@ -68,6 +71,7 @@ class DealCreate(BaseModel):
 
 class DealUpdate(BaseModel):
     name: Optional[str] = None
+    contact_name: Optional[str] = None
     company: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
@@ -117,13 +121,13 @@ class TaskUpdate(BaseModel):
 
 
 DEFAULT_STAGES = [
-    {"id": "novo", "name": "Novo contacto", "type": "open"},
-    {"id": "reuniao", "name": "Reunião marcada", "type": "open"},
-    {"id": "proposta", "name": "Proposta enviada", "type": "open"},
-    {"id": "negociacao", "name": "Negociação", "type": "open"},
-    {"id": "contrato", "name": "Contrato", "type": "open"},
-    {"id": "ganho", "name": "Ganho", "type": "won"},
-    {"id": "perdido", "name": "Perdido", "type": "lost"},
+    {"id": "novo", "name": "Novo contacto", "type": "open", "color": "#3b82f6", "probability": 10},
+    {"id": "reuniao", "name": "Reunião marcada", "type": "open", "color": "#8b5cf6", "probability": 30},
+    {"id": "proposta", "name": "Proposta enviada", "type": "open", "color": "#f59e0b", "probability": 50},
+    {"id": "negociacao", "name": "Negociação", "type": "open", "color": "#eab308", "probability": 70},
+    {"id": "contrato", "name": "Contrato", "type": "open", "color": "#14b8a6", "probability": 90},
+    {"id": "ganho", "name": "Ganho", "type": "won", "color": "#10b981", "probability": 100},
+    {"id": "perdido", "name": "Perdido", "type": "lost", "color": "#ef4444", "probability": 0},
 ]
 
 
@@ -131,16 +135,42 @@ async def ensure_default_pipeline():
     existing = await db.pipelines.find_one({})
     if not existing:
         await db.pipelines.insert_one({
-            "name": "Pipeline Comercial", "stages": DEFAULT_STAGES,
+            "name": "Pipeline Comercial", "stages": DEFAULT_STAGES, "is_default": True,
             "created_at": now_utc().isoformat(),
         })
+        return
+    # Backfill: guarantee exactly one default pipeline exists.
+    has_default = await db.pipelines.find_one({"is_default": True})
+    if not has_default:
+        first = await db.pipelines.find_one({}, sort=[("created_at", 1)])
+        await db.pipelines.update_one({"_id": first["_id"]}, {"$set": {"is_default": True}})
 
 
 # ==================== PIPELINES ====================
+_PALETTE = ["#3b82f6", "#8b5cf6", "#ec4899", "#f59e0b", "#eab308", "#14b8a6", "#10b981", "#ef4444", "#64748b", "#06b6d4"]
+_DEFAULT_BY_ID = {s["id"]: s for s in DEFAULT_STAGES}
+
+
+def _enrich_stages(pipeline):
+    """Backfill color/probability on legacy stages so the UI always has them."""
+    changed = False
+    for i, st in enumerate(pipeline.get("stages", [])):
+        if "color" not in st:
+            st["color"] = _DEFAULT_BY_ID.get(st.get("id"), {}).get("color", _PALETTE[i % len(_PALETTE)])
+            changed = True
+        if "probability" not in st:
+            st["probability"] = _DEFAULT_BY_ID.get(st.get("id"), {}).get("probability", 0)
+            changed = True
+    return changed
+
+
 @crm.get("/pipelines")
 async def list_pipelines(user=Depends(get_current_user)):
     await ensure_default_pipeline()
     docs = await db.pipelines.find().sort("created_at", 1).to_list(100)
+    for d in docs:
+        if _enrich_stages(d):
+            await db.pipelines.update_one({"_id": d["_id"]}, {"$set": {"stages": d["stages"]}})
     return [s(d) for d in docs]
 
 
@@ -169,9 +199,27 @@ async def delete_pipeline(pid: str, user=Depends(get_current_user)):
     count = await db.pipelines.count_documents({})
     if count <= 1:
         raise HTTPException(status_code=400, detail="Não pode eliminar o único pipeline")
+    target = await db.pipelines.find_one({"_id": _oid(pid)})
+    if not target:
+        raise HTTPException(status_code=404, detail="Pipeline não encontrado")
     await db.pipelines.delete_one({"_id": _oid(pid)})
     await db.deals.delete_many({"pipeline_id": pid})
     await db.automations.delete_many({"pipeline_id": pid})
+    # If we removed the default, promote another pipeline.
+    if target.get("is_default"):
+        other = await db.pipelines.find_one({}, sort=[("created_at", 1)])
+        if other:
+            await db.pipelines.update_one({"_id": other["_id"]}, {"$set": {"is_default": True}})
+    return {"ok": True}
+
+
+@crm.post("/pipelines/{pid}/set-default")
+async def set_default_pipeline(pid: str, user=Depends(get_current_user)):
+    target = await db.pipelines.find_one({"_id": _oid(pid)})
+    if not target:
+        raise HTTPException(status_code=404, detail="Pipeline não encontrado")
+    await db.pipelines.update_many({}, {"$set": {"is_default": False}})
+    await db.pipelines.update_one({"_id": _oid(pid)}, {"$set": {"is_default": True}})
     return {"ok": True}
 
 
@@ -199,8 +247,9 @@ async def create_deal(payload: DealCreate, user=Depends(get_current_user)):
     if payload.pipeline_id:
         pipeline = await db.pipelines.find_one({"_id": _oid(payload.pipeline_id)})
     if not pipeline:
-        pipeline = await db.pipelines.find_one({})
+        pipeline = await db.pipelines.find_one({"is_default": True}) or await db.pipelines.find_one({})
     stage_id = payload.stage_id or pipeline["stages"][0]["id"]
+    stage = next((st for st in pipeline["stages"] if st["id"] == stage_id), pipeline["stages"][0])
 
     history = []
     # copy contact email history summary
@@ -213,6 +262,8 @@ async def create_deal(payload: DealCreate, user=Depends(get_current_user)):
     doc = payload.model_dump()
     doc["pipeline_id"] = str(pipeline["_id"])
     doc["stage_id"] = stage_id
+    if not doc.get("probability"):
+        doc["probability"] = stage.get("probability", 0)
     doc["status"] = "open"
     doc["lost_reason"] = None
     doc["history"] = history
@@ -258,6 +309,8 @@ async def move_deal(did: str, payload: MoveDeal, user=Depends(get_current_user))
     if not stage:
         raise HTTPException(status_code=400, detail="Etapa inválida")
     updates = {"stage_id": payload.stage_id}
+    if "probability" in stage:
+        updates["probability"] = stage.get("probability", 0)
     status = "open"
     if stage["type"] == "won":
         status = "won"

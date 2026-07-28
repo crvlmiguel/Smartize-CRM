@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2, GripVertical, Zap, Euro, Settings2, Trophy, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -7,13 +8,14 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import api, { apiError } from "@/lib/api";
 import { PageHeader } from "@/components/common";
+import PipelineManager from "@/components/PipelineManager";
 
 const EVENTS = [
   { v: "deal_created", l: "Negócio criado" },
@@ -42,14 +44,22 @@ export default function Negocios() {
   const [autoOpen, setAutoOpen] = useState(false);
   const [autoForm, setAutoForm] = useState(null);
   const [dealToDelete, setDealToDelete] = useState(null);
+  const [pmOpen, setPmOpen] = useState(false);
+  const location = useLocation();
+  const navigate = useNavigate();
 
   const pipeline = pipelines.find((p) => p.id === pid);
+  const dealPipeline = pipelines.find((p) => p.id === form.pipeline_id) || pipeline;
 
   const loadPipelines = useCallback(async () => {
     const { data } = await api.get("/pipelines");
     setPipelines(data);
-    if (data.length && !pid) setPid(data[0].id);
-  }, [pid]);
+    setPid((cur) => {
+      if (cur && data.some((p) => p.id === cur)) return cur;
+      const def = data.find((p) => p.is_default) || data[0];
+      return def ? def.id : "";
+    });
+  }, []);
 
   const loadDeals = useCallback(() => { if (pid) api.get("/deals", { params: { pipeline_id: pid } }).then((r) => setDeals(r.data)); }, [pid]);
   const loadAutos = useCallback(() => { if (pid) api.get("/automations", { params: { pipeline_id: pid } }).then((r) => setAutomations(r.data)); }, [pid]);
@@ -57,15 +67,41 @@ export default function Negocios() {
   useEffect(() => { loadPipelines(); api.get("/templates").then((r) => setTemplates(r.data)); }, [loadPipelines]);
   useEffect(() => { loadDeals(); loadAutos(); }, [loadDeals, loadAutos]);
 
-  const openNew = () => { setEditing(null); setForm({ name: "", company: "", email: "", phone: "", value: 0, probability: 0, owner: "", notes: "", pipeline_id: pid }); setDealOpen(true); };
+  const openNew = (prefill = {}) => {
+    const pipe = pipelines.find((p) => p.id === (prefill.pipeline_id || pid)) || pipelines[0];
+    setEditing(null);
+    setForm({
+      name: "", contact_name: "", company: "", email: "", phone: "", position: "", website: "",
+      value: 0, probability: 0, owner: "", notes: "", expected_close: "",
+      pipeline_id: pipe?.id || "", stage_id: pipe?.stages?.[0]?.id || "",
+      ...prefill,
+    });
+    setDealOpen(true);
+  };
   const openEdit = (d) => { setEditing(d); setForm({ ...d }); setDealOpen(true); };
+
+  // Pre-fill from a contact ("+ Criar Negócio" on Contactos).
+  useEffect(() => {
+    const c = location.state?.contact;
+    if (c && pipelines.length) {
+      const full = `${c.first_name || ""} ${c.last_name || ""}`.trim();
+      openNew({
+        contact_id: c.id,
+        name: `Negócio — ${full || c.email}`,
+        contact_name: full,
+        company: c.company || "", email: c.email || "", phone: c.phone || "",
+        position: c.position || "", website: c.website || "",
+      });
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state, pipelines.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveDeal = async () => {
     if (!form.name?.trim()) return toast.error("Nome obrigatório");
     try {
       const body = { ...form, value: Number(form.value) || 0, probability: Number(form.probability) || 0 };
       if (editing) await api.put(`/deals/${editing.id}`, body);
-      else await api.post("/deals", { ...body, pipeline_id: pid });
+      else await api.post("/deals", body);
       toast.success(editing ? "Negócio atualizado" : "Negócio criado");
       setDealOpen(false); loadDeals();
     } catch (e) { toast.error(apiError(e)); }
@@ -104,9 +140,10 @@ export default function Negocios() {
       <PageHeader title="Negócios" subtitle="CRM comercial visual (Kanban).">
         <Select value={pid} onValueChange={setPid}>
           <SelectTrigger className="w-56" data-testid="pipeline-select"><SelectValue placeholder="Pipeline" /></SelectTrigger>
-          <SelectContent>{pipelines.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+          <SelectContent>{pipelines.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}{p.is_default ? " (padrão)" : ""}</SelectItem>)}</SelectContent>
         </Select>
-        <Button onClick={openNew} data-testid="new-deal-button"><Plus size={16} className="mr-1.5" /> Novo negócio</Button>
+        <Button variant="outline" onClick={() => setPmOpen(true)} data-testid="manage-pipelines-button"><Settings2 size={16} className="mr-1.5" /> Gerir pipelines</Button>
+        <Button onClick={() => openNew()} data-testid="new-deal-button"><Plus size={16} className="mr-1.5" /> Adicionar negócio</Button>
       </PageHeader>
 
       <Tabs defaultValue="kanban">
@@ -122,6 +159,7 @@ export default function Negocios() {
                 onDragOver={(e) => e.preventDefault()} onDrop={() => onDrop(st.id)}>
                 <div className="flex items-center justify-between mb-2 px-1">
                   <span className="font-heading font-bold text-sm flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: st.color || "#64748b" }} />
                     {st.type === "won" && <Trophy size={14} className="text-emerald-600" />}
                     {st.type === "lost" && <XCircle size={14} className="text-red-600" />}
                     {st.name}
@@ -176,12 +214,32 @@ export default function Negocios() {
 
       <Dialog open={dealOpen} onOpenChange={setDealOpen}>
         <DialogContent className="max-w-lg" data-testid="deal-dialog">
-          <DialogHeader><DialogTitle>{editing ? "Editar negócio" : "Novo negócio"}</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>{editing ? "Editar negócio" : "Novo negócio"}</DialogTitle>
+            <DialogDescription>Preencha os dados do negócio e escolha o pipeline e etapa.</DialogDescription>
+          </DialogHeader>
           <div className="grid grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto pr-1">
             <div className="col-span-2"><Label>Nome do negócio</Label><Input value={form.name || ""} data-testid="deal-name-input" onChange={(e) => setForm({ ...form, name: e.target.value })} className="mt-1.5" /></div>
+            <div><Label>Nome do contacto</Label><Input value={form.contact_name || ""} data-testid="deal-contactname-input" onChange={(e) => setForm({ ...form, contact_name: e.target.value })} className="mt-1.5" /></div>
             <div><Label>Empresa</Label><Input value={form.company || ""} onChange={(e) => setForm({ ...form, company: e.target.value })} className="mt-1.5" /></div>
             <div><Label>Email</Label><Input value={form.email || ""} onChange={(e) => setForm({ ...form, email: e.target.value })} className="mt-1.5" /></div>
             <div><Label>Telefone</Label><Input value={form.phone || ""} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="mt-1.5" /></div>
+            <div><Label>Cargo</Label><Input value={form.position || ""} onChange={(e) => setForm({ ...form, position: e.target.value })} className="mt-1.5" /></div>
+            <div><Label>Website</Label><Input value={form.website || ""} onChange={(e) => setForm({ ...form, website: e.target.value })} className="mt-1.5" /></div>
+            <div>
+              <Label>Pipeline</Label>
+              <Select value={form.pipeline_id} onValueChange={(v) => { const p = pipelines.find((x) => x.id === v); setForm({ ...form, pipeline_id: v, stage_id: p?.stages?.[0]?.id || "" }); }}>
+                <SelectTrigger className="mt-1.5" data-testid="deal-pipeline-select"><SelectValue placeholder="Pipeline" /></SelectTrigger>
+                <SelectContent>{pipelines.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Etapa inicial</Label>
+              <Select value={form.stage_id} onValueChange={(v) => setForm({ ...form, stage_id: v })}>
+                <SelectTrigger className="mt-1.5" data-testid="deal-stage-select"><SelectValue placeholder="Etapa" /></SelectTrigger>
+                <SelectContent>{dealPipeline?.stages.map((st) => <SelectItem key={st.id} value={st.id}>{st.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
             <div><Label>Responsável</Label><Input value={form.owner || ""} onChange={(e) => setForm({ ...form, owner: e.target.value })} className="mt-1.5" /></div>
             <div><Label>Valor (€)</Label><Input type="number" value={form.value ?? 0} data-testid="deal-value-input" onChange={(e) => setForm({ ...form, value: e.target.value })} className="mt-1.5" /></div>
             <div><Label>Probabilidade (%)</Label><Input type="number" value={form.probability ?? 0} onChange={(e) => setForm({ ...form, probability: e.target.value })} className="mt-1.5" /></div>
@@ -194,7 +252,10 @@ export default function Negocios() {
 
       <Dialog open={autoOpen} onOpenChange={setAutoOpen}>
         <DialogContent data-testid="automation-dialog">
-          <DialogHeader><DialogTitle>{autoForm?.id ? "Editar automação" : "Nova automação"}</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>{autoForm?.id ? "Editar automação" : "Nova automação"}</DialogTitle>
+            <DialogDescription>Defina QUANDO acontece um evento e o que EXECUTAR.</DialogDescription>
+          </DialogHeader>
           {autoForm && (
             <div className="space-y-3">
               <div><Label>Nome</Label><Input value={autoForm.name} data-testid="automation-name-input" onChange={(e) => setAutoForm({ ...autoForm, name: e.target.value })} className="mt-1.5" /></div>
@@ -254,6 +315,14 @@ export default function Negocios() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <PipelineManager
+        open={pmOpen}
+        onOpenChange={setPmOpen}
+        pipelines={pipelines}
+        selectedId={pid}
+        onChanged={async () => { await loadPipelines(); loadDeals(); loadAutos(); }}
+      />
     </div>
   );
 }

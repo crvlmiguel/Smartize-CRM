@@ -12,7 +12,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
 import api, { apiError } from "@/lib/api";
 import { PageHeader, StatusBadge, EmptyState } from "@/components/common";
@@ -203,6 +203,7 @@ export default function Campaigns() {
         <DialogContent className="max-w-xl" data-testid="campaign-dialog">
           <DialogHeader>
             <DialogTitle>Nova campanha</DialogTitle>
+            <DialogDescription>Configure o envio em poucos passos.</DialogDescription>
           </DialogHeader>
 
           <div className="flex items-center gap-2 mb-2">
