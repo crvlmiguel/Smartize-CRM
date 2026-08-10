@@ -40,7 +40,15 @@ Fluxo: SMTP → Contactos → Grupos → Template → Campanha → Enviar/Agenda
 - **P2**: Campos personalizados na UI de contactos; slugs ASCII nos nav-testids.
 - **P3 (futuro)**: IA, SMS/WhatsApp.
 
-## Iteração 17 — Correção definitiva da assinatura: "..." do Gmail + logo (2026-08-10)
+## Iteração 17b — Imagem da assinatura guardada BYTE-A-BYTE (original intacto) (2026-08-10)
+- **Pedido do utilizador**: o logótipo deve chegar ao destinatário exatamente igual ao PNG original — sem redimensionar, converter, comprimir ou reconstruir; preservar transparência, cores, nitidez e proporções; sem adicionar qualquer fundo; tamanho visual controlado só pelo HTML.
+- **Causa**: `/api/uploads/image` redimensionava e voltava a gravar (recompressão) qualquer imagem com largura > 1600px, alterando o ficheiro.
+- **Fix**: endpoint reescrito para guardar os **bytes originais intactos** (valida que abre como imagem só para obter dimensões; nunca redimensiona/grava/converte). Content-Type derivado do formato real (PNG→image/png, etc.). Removido `MAX_UPLOAD_WIDTH`. `_ensure_img_email_safe`/`sanitize_signature_html` só ajustam estilo (nunca a imagem, nunca adicionam fundo). O editor de assinatura (`SignatureEditor.jsx`, botão de imagem) já pergunta a **largura em px** → controlo de tamanho sem perder qualidade.
+- **Verificado**: upload de PNG transparente 1800×700 → servido como image/png, **sha256 idêntico** (byte-a-byte), transparência preservada, dimensões nativas mantidas. Teste `tests/test_iter17_upload.py` (1) + regressão iter15/16/17 (32) verdes.
+- **Decisão do utilizador**: vai usar um **PNG com fundo branco embutido** e adicioná-lo pelo editor de assinatura (assim não há preto em dark mode e o original é preservado tal e qual).
+- **Produção**: requer **redeploy** + **re-upload** do PNG no editor de assinatura (as imagens antigas foram processadas pela versão anterior do endpoint).
+
+
 - **Problema (reportado pelo utilizador, ambiente PREVIEW, cliente Gmail modo escuro)**: (1) o Gmail mostrava "..." (Mostrar conteúdo cortado) entre o corpo e a assinatura; (2) o logo Smartize aparecia pixelizado e com fundo preto no modo escuro.
 - **Causa 1 ("...")**: confirmado que os "..." NÃO são texto nosso — é o botão "Show trimmed content" do Gmail, que recolhe conteúdo repetido/semelhante a emails anteriores do mesmo remetente (no outreach a assinatura repete-se). **Fix**: `inject_anti_trim(html, token)` insere um marcador único invisível por email (`ref:<tracking_id>`) antes de `</body>` → cada email fica distinto e o Gmail deixa de recolher a assinatura. Integrado em `inject_open_pixel` (worker _send_job/_send_sequence_step) e no `/api/smtp/test-send` (token uuid).
 - **Causa 2 (logo)**: o ficheiro original era baixa resolução (pixelização vem da fonte) + fundo transparente (→ preto em dark mode) + WEBP (não suportado em Outlook). **Fix**: novo logo de alta resolução do utilizador, recortado justo, achatado sobre **fundo branco** e guardado como **PNG 600×127** (`/api/public/image/6a79ffb0400eb17a005c7e7b`); assinatura da conta QA atualizada para esse URL. Branco embutido = sem preto em dark mode e sem moldura adicionada.

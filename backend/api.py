@@ -402,9 +402,6 @@ async def preview_template(body: dict, user=Depends(get_current_user)):
     }
 
 
-MAX_UPLOAD_WIDTH = 1600
-
-
 @api.post("/uploads/image")
 async def upload_image(file: UploadFile = File(...), user=Depends(get_current_user)):
     raw = await file.read()
@@ -415,28 +412,16 @@ async def upload_image(file: UploadFile = File(...), user=Depends(get_current_us
         img.load()
     except Exception:
         raise HTTPException(status_code=400, detail="Ficheiro de imagem inválido")
-    fmt = (img.format or "PNG").upper()
+    fmt = (img.format or "").upper()
     w, h = img.size
-    # Cap stored resolution to keep emails light; display width is set in the HTML.
-    if w > MAX_UPLOAD_WIDTH:
-        ratio = MAX_UPLOAD_WIDTH / float(w)
-        img = img.resize((MAX_UPLOAD_WIDTH, max(1, int(h * ratio))))
-        w, h = img.size
-        if fmt in ("JPEG", "JPG"):
-            if img.mode in ("RGBA", "P", "LA"):
-                img = img.convert("RGB")
-            save_fmt, content_type = "JPEG", "image/jpeg"
-        elif fmt == "WEBP":
-            save_fmt, content_type = "WEBP", "image/webp"
-        elif fmt == "GIF":
-            save_fmt, content_type = "GIF", "image/gif"
-        else:
-            save_fmt, content_type = "PNG", "image/png"
-        buf = io.BytesIO()
-        img.save(buf, format=save_fmt)
-        raw = buf.getvalue()
-    else:
-        content_type = file.content_type or f"image/{fmt.lower()}"
+    # Store the ORIGINAL bytes untouched — never resize, convert or recompress.
+    # This preserves transparency, colours, sharpness and proportions exactly as
+    # uploaded. Display size is controlled purely via the HTML width in the signature.
+    mime_by_fmt = {
+        "PNG": "image/png", "JPEG": "image/jpeg", "JPG": "image/jpeg",
+        "WEBP": "image/webp", "GIF": "image/gif", "BMP": "image/bmp", "TIFF": "image/tiff",
+    }
+    content_type = mime_by_fmt.get(fmt) or file.content_type or "application/octet-stream"
     res = await db.uploads.insert_one({
         "data": base64.b64encode(raw).decode(), "content_type": content_type,
         "width": w, "height": h, "filename": file.filename or "image",
