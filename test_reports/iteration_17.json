@@ -1,0 +1,44 @@
+{
+  "summary": "Iteration 17 signature-fix validation (backend + frontend). Ran the full backend pytest suite (231 tests) serially: 230 passed / 1 skipped / 0 failed, including all 6 new tests in test_iter17.py and the test_iter16.py regression set. Added /app/backend/tests/test_iter17_api.py (6 API-level tests) validating POST /api/templates/preview and the new logo image: email_html contains NO '--tw-' junk, the signature appears exactly once, the plain body is rendered with <br>, {first_name}/{company} variables are substituted, visible styles (colors/font/width) survive sanitization, the text/plain fallback is tag-free, the QA account signature points to a real /api/public/image/<id>, and that image is a 600x127 PNG whose corner pixel is fully opaque white (confirms the dark-mode black-box fix). Frontend: Templates preview iframe renders correctly (logo naturalWidth=600 -> loaded, exactly 1 logo occurrence, no --tw-, 'Ola Joao,' substituted, no console errors); Settings > Contas de Email signature editor opens with the existing signature, Visual/Codigo HTML tabs both work, live preview shows the logo, and Guardar saves successfully ('Conta atualizada' toast) with the signature surviving the save round-trip. Real SMTP send was NOT attempted (fictitious preview account) per instructions.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST/PUT /api/smtp", "issue": "signature_html is stored RAW: the QA account still holds 15,405 chars of '--tw-*' Tailwind junk, and a save round-trip keeps it at 15,405 chars. Sanitization only happens at compose time, so the DB and the signature editor keep carrying ~15KB of dead CSS (and it compounds on every future paste). Recommend calling sanitize_signature_html() on write in the /api/smtp create/update handlers too."},
+      {"endpoint": "pytest suite (test infra)", "issue": "13 tests in tests/backend_test.py, 4 in test_iter4.py, and cross-class SMTP-dependent tests in iter14/16/17_api FAIL when run under the default xdist parallel config (-n --dist loadscope) because of class-level shared state (e.g. TestGroups._created['id']) and a shared default SMTP account. All 231 pass serially (-o addopts=''). Pre-existing test-design issue, not a product bug."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Settings / SMTP dialog + Template dialog", "issues": ["Radix console warning repeated 4x: 'Missing `Description` or `aria-describedby={undefined}` for {DialogContent}' - a11y only, add DialogDescription or aria-describedby={undefined}"]},
+      {"screen": "Email preview signature (stored content, cosmetic)", "issues": ["In the account signature the anchor text is 'www.smartize.' with the trailing '.pt' left OUTSIDE the <a>, so only part of the URL is underlined/clickable"]},
+      {"screen": "inject_anti_trim marker (review note, not reproducible in preview)", "issues": ["The invisible marker uses float:left together with max-height:0/width:0; float on a zero-size inline-block is generally safe but Outlook/older clients occasionally mis-handle floats - consider dropping float:left and keeping only display:inline-block;max-height:0;overflow:hidden;opacity:0;mso-hide:all"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter17_api.py",
+    "/app/backend/tests/test_iter17.py",
+    "/app/backend/tests/test_iter16.py",
+    "/app/test_reports/pytest/iter17_results.xml"
+  ],
+  "action_items": [
+    "OPTIONAL/RECOMMENDED: sanitize signature_html on write in POST/PUT /api/smtp so the stored value (currently 15.4KB of --tw- junk) is clean, not just the composed email.",
+    "OPTIONAL: fix the DialogContent aria-describedby warnings in EmailAccounts.jsx and Templates.jsx.",
+    "OPTIONAL: fix the partially-linked 'www.smartize.pt' anchor in the QA account signature.",
+    "TEST INFRA (low priority): make tests/backend_test.py and test_iter4.py xdist-safe (module-scoped fixtures instead of class attribute sharing) so the default parallel pytest config passes."
+  ],
+  "critical_code_review_comments": [
+    "sanitize_signature_html only strips --tw-* inside style attributes; if a pasted signature carries a <style> block or class-based Tailwind, the junk survives. Acceptable for the current editor but worth a guard.",
+    "inject_open_pixel calls inject_anti_trim internally, while api.py test-send calls compose_email_html + inject_anti_trim separately - two call paths for the same concern; risk of a future path forgetting the token. Consider a single compose_and_finalize() helper.",
+    "The anti-trim token 'ref:<tracking_id>' is only injected into the HTML part; the text/plain alternative is identical for every recipient. Gmail trims the HTML view, so this is fine, but it is worth documenting."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter17_api.py"],
+  "success_rate": {"backend": "100% (230 passed / 1 skipped / 0 failed serially; 12 iteration-17 specific tests all pass)", "frontend": "100% of tested flows (Templates preview, signature editor open/edit/save round-trip)"},
+  "seed_data_creation": "None persisted. Created and deleted a TEST_probe SMTP account and a temporary contact during RCA; the unsaved TEST_iter17_sig template was never saved. Verified zero TEST_ leftovers in /api/smtp, /api/templates, /api/contacts.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "carlos.miguel@smartize.pt / 100%Smartize (admin, works). Settings route is /configuracoes (NOT /settings - that returns the 404 page).",
+  "context_for_next_testing_agent": "Iteration-17 signature fix is verified end-to-end at the HTML/structure level. Key facts: (1) run the backend suite SERIALLY with -o addopts='' - the default xdist parallel config causes ~20 false failures from class-shared state; (2) frontend Settings route is /configuracoes and the Email Accounts tab testid is tab-contas; (3) Templates preview iframe testid is preview-iframe, read it via contentDocument.body.innerHTML; (4) the QA logo is /api/public/image/6a79ffb0400eb17a005c7e7b, a 600x127 opaque-white PNG; (5) real SMTP send is impossible in preview (fictitious account) - never attempt test-send expecting success; (6) the actual Gmail '...' collapse and dark-mode rendering can only be confirmed by the user in a real inbox.",
+  "rca_of_the_issue": "The 20 failures seen on the first full-suite run were NOT product regressions. Root cause: /app/backend/pytest.ini enables xdist with '-n --dist loadscope'; tests/backend_test.py shares state across classes via class attributes (TestGroups._created['id'] consumed by TestContacts/TestCampaigns) and several suites (iter4/14/16/17_api) mutate or read the single shared default SMTP account. Under loadscope these classes land on different workers / run out of order, so the shared dict is empty -> KeyError: 'id', and the default-account signature differs from what a test expects. Re-running each file in isolation and the whole suite serially yields 230 passed / 1 skipped / 0 failed, confirming the iteration-17 changes (sanitize_signature_html, compose_email_html, inject_anti_trim, inject_open_pixel, /api/templates/preview) are all correct."
+}

@@ -3,6 +3,7 @@ import os
 import re
 import json
 import base64
+import uuid
 from datetime import datetime, timezone, timedelta
 
 import pandas as pd
@@ -13,7 +14,7 @@ from fastapi.responses import Response, RedirectResponse
 
 from core import db, now_utc, encrypt_secret
 from auth import get_current_user
-from email_service import build_variable_map, substitute, test_smtp_connection, send_email, compose_email_html, html_has_visible_content, html_to_text, text_to_html
+from email_service import build_variable_map, substitute, test_smtp_connection, send_email, compose_email_html, html_has_visible_content, html_to_text, text_to_html, inject_anti_trim, sanitize_signature_html
 from worker import build_campaign_jobs, build_enrollments
 from models import (
     ContactCreate, ContactUpdate, GroupCreate, GroupUpdate,
@@ -467,6 +468,8 @@ async def create_smtp(payload: SmtpCreate, user=Depends(get_current_user)):
     doc = payload.model_dump()
     doc["password_enc"] = encrypt_secret(doc.pop("password", "") or "")
     doc["imap_password_enc"] = encrypt_secret(doc.pop("imap_password", "") or "")
+    if doc.get("signature_html"):
+        doc["signature_html"] = sanitize_signature_html(doc["signature_html"])
     doc["created_at"] = now_utc().isoformat()
     doc["connection_status"] = "unknown"
     doc["last_sync"] = None
@@ -490,6 +493,8 @@ async def update_smtp(smtp_id: str, payload: SmtpUpdate, user=Depends(get_curren
         ipw = updates.pop("imap_password")
         if ipw:
             updates["imap_password_enc"] = encrypt_secret(ipw)
+    if updates.get("signature_html"):
+        updates["signature_html"] = sanitize_signature_html(updates["signature_html"])
     if updates.get("is_default"):
         await db.smtp_accounts.update_many({}, {"$set": {"is_default": False}})
     await db.smtp_accounts.update_one({"_id": _oid(smtp_id)}, {"$set": updates})
@@ -877,6 +882,7 @@ async def smtp_test_send(payload: SmtpTestSendRequest, user=Depends(get_current_
         f'<p>Confirma que a sua conta de email e assinatura estão a funcionar corretamente.</p>'
     )
     body = compose_email_html(content, sig)
+    body = inject_anti_trim(body, uuid.uuid4().hex)
     try:
         await send_email(smtp, payload.to_email, f"Teste de envio — {company} Outreach", body, "Mensagem de teste")
         return {"success": True, "message": f"Email de teste enviado para {payload.to_email}"}

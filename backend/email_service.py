@@ -130,6 +130,29 @@ def _ensure_img_email_safe(html: str) -> str:
     return re.sub(r"<img\b[^>]*>", repl, html, flags=re.I)
 
 
+def sanitize_signature_html(html: str) -> str:
+    """Strip editor bloat from a pasted signature — the unused Tailwind `--tw-*`
+    custom properties (often 10-15KB of junk) — while keeping the visible styling
+    (color/font/width/etc.) untouched. Lighter, cleaner markup also helps mail
+    clients render the signature reliably."""
+    if not html:
+        return ""
+
+    def clean_style(body):
+        # Drop unused CSS custom properties the editor injects (never referenced).
+        body = re.sub(r'--tw-[\w-]+\s*:[^;]*;?', '', body)
+        # Tidy whitespace and stray semicolons.
+        body = re.sub(r'\s{2,}', ' ', body)
+        body = re.sub(r';\s*;+', ';', body).strip().strip(';').strip()
+        if not body:
+            return ''
+        return f'style="{body}"'
+
+    html = re.sub(r'style="([^"]*)"', lambda m: clean_style(m.group(1)), html)
+    html = re.sub(r"style='([^']*)'", lambda m: clean_style(m.group(1)), html)
+    return html
+
+
 def wrap_email_html(inner_html: str) -> str:
     """Wrap content as a natural, plain-looking email — no container box, background or borders."""
     return (
@@ -157,14 +180,29 @@ def compose_email_html(content_html: str, signature_html: str = "") -> str:
     """Assemble the final email HTML (content + signature) with a natural, non-boxed look."""
     inner = _ensure_img_email_safe(content_html or "")
     if signature_html:
-        inner += '<br><br>' + _ensure_img_email_safe(signature_html)
+        inner += '<br><br>' + _ensure_img_email_safe(sanitize_signature_html(signature_html))
     return wrap_email_html(inner)
+
+
+def inject_anti_trim(html: str, token: str) -> str:
+    """Insert a unique invisible marker so Gmail never collapses a repeated
+    signature into a "..." (show trimmed content) toggle."""
+    marker = (
+        f'<span style="display:inline-block;max-height:0;overflow:hidden;'
+        f'opacity:0;color:transparent;font-size:1px;line-height:1px;mso-hide:all;">'
+        f'ref:{token}</span>'
+    )
+    if "</body>" in html.lower():
+        idx = html.lower().rfind("</body>")
+        return html[:idx] + marker + html[idx:]
+    return html + marker
 
 
 def inject_open_pixel(html: str, base_url: str, tracking_id: str) -> str:
     # No display:none — hidden images are often skipped by mail clients,
     # which prevents open tracking from firing. Use a tiny 1x1 image instead.
     pixel = f'<img src="{base_url}/api/track/open/{tracking_id}.png?t=1" width="1" height="1" border="0" alt="" style="width:1px;height:1px;border:0;margin:0;padding:0;" />'
+    html = inject_anti_trim(html, tracking_id)
     if "</body>" in html.lower():
         idx = html.lower().rfind("</body>")
         return html[:idx] + pixel + html[idx:]
