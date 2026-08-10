@@ -40,7 +40,13 @@ Fluxo: SMTP → Contactos → Grupos → Template → Campanha → Enviar/Agenda
 - **P2**: Campos personalizados na UI de contactos; slugs ASCII nos nav-testids.
 - **P3 (futuro)**: IA, SMS/WhatsApp.
 
-## Iteração 11-14 — Editor responsivo, email natural, Templates só Plain Text (2026-08-10)
+## Iteração 15 — Assinatura em texto simples (fix "assinatura colada") (2026-08-10)
+- **Bug**: em emails text/plain a assinatura chegava toda colada numa linha porque `html_to_text` só quebrava em `<br>`/`</p>`.
+- **Fix conversor**: `html_to_text` reescrito — trata `</p></div></tr></td></th></table></h1-6></li></ul></ol>` e `<br>` como quebras de linha, remove `<script>/<style>/<head>`, decodifica entidades e colapsa linhas vazias → cada informação (Nome/Cargo/Telefone/Email/Website) numa linha.
+- **Dois formatos de assinatura**: novo campo `signature_text` por conta SMTP (models + endpoints). Envio: HTML usa `signature_html`; text/plain usa `signature_text` (própria) ou, se vazia, gera limpa a partir do HTML. UI: campo "Assinatura em texto simples" + botão "Gerar a partir do HTML" (`htmlToPlainSig` espelha o backend).
+- **Testado**: iteração 15 backend 100% (14 novos + 206 regressão), frontend 100% (uma info por linha, sem tags). Pendências opcionais: preview de templates HTML não anexa a assinatura de texto (cosmético; envio correto); DialogDescription a11y no dialog de conta.
+
+
 - **Editor de templates responsivo**: modal com grid `auto/1fr/auto` + `max-h-[90vh]`, scroll interno só no conteúdo, botões (Preview/Cancelar/Guardar) sempre acessíveis (testado 768/700/600px). (iter11 100%)
 - **Email com aspeto natural**: `wrap_email_html` deixou de criar caixa/cartão (sem tabela container, fundo cinzento ou borda); assinatura separada por espaçamento. (iter12)
 - **Templates = apenas Plain Text**: removido editor visual/HTML; editor agora é Nome + Assunto + Textarea de texto simples + Inserir variável ({{var}}) + Preview + Guardar. Envio efetivo em `text/plain` (sem HTML) quando não há conteúdo HTML visível (`html_has_visible_content`). Variáveis {{first_name}}/{{company}}/{{saudacao}} funcionam. (iter13 backend 100%)

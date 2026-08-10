@@ -153,8 +153,11 @@ async def _send_job(campaign: dict, job: dict, smtp: dict):
     if not signature_html and smtp.get("signature"):
         signature_html = smtp.get("signature").replace("\n", "<br/>")
     signature_html = substitute(signature_html, variables) if signature_html else ""
-    if signature_html:
-        text_body = (text_body or "") + "\n\n" + html_to_text(signature_html)
+    # Plain-text signature: prefer the account's own text version, else derive a clean one from the HTML.
+    signature_text = (smtp.get("signature_text") or "").strip()
+    signature_text = substitute(signature_text, variables) if signature_text else html_to_text(signature_html)
+    if signature_text:
+        text_body = (text_body or "") + "\n\n" + signature_text
 
     tracking_id = job["tracking_id"]
     if html_has_visible_content(html_body):
@@ -293,8 +296,10 @@ async def _send_sequence_step(campaign, enr, contact, smtp, steps, idx):
     html_body = substitute(template.get("content_html", ""), variables)
     sig = smtp.get("signature_html") or (smtp.get("signature") or "").replace("\n", "<br/>")
     sig = substitute(sig, variables) if sig else ""
-    if sig:
-        text_body = (text_body or "") + "\n\n" + html_to_text(sig)
+    sig_text = (smtp.get("signature_text") or "").strip()
+    sig_text = substitute(sig_text, variables) if sig_text else html_to_text(sig)
+    if sig_text:
+        text_body = (text_body or "") + "\n\n" + sig_text
 
     tracking_id = str(ObjectId())
     if html_has_visible_content(html_body):

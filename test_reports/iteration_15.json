@@ -1,0 +1,28 @@
+{
+  "summary": "Iteration 15 focused on the plain-text signature bug (glued signature in text/plain emails). Backend: created /app/backend/tests/test_iter15.py (11 tests: improved html_to_text via /api/templates/preview, HTML-template path keeps HTML signature, per-account signature_text PUT/GET persistence, preview fallback, 7 converter edge cases) and /app/backend/tests/test_iter15_worker.py (3 worker-level tests patching send_email to inspect the real MIME bodies). All 14 new tests pass; full regression suite = 206 passed, 1 skipped. Frontend: verified login, /configuracoes -> Contas de Email -> edit-smtp-<id> dialog contains signature-text-input and generate-signature-text; the generate button produced 5 clean lines (Nome / Cargo / Phone / Email / Website) with no HTML tags, saving via save-smtp-button persisted and reloaded correctly; template Preview for a plain-text template renders the account signature_text with one info per line (no gluing). No blocking issues found.",
+  "backend_issues": { "critical": [], "minor": [
+    {"endpoint": "/api/templates/preview", "issue": "For templates with visible HTML content, the returned content_text does NOT include the plain-text signature, while worker._send_job/_send_sequence_step DO append signature_text to the text/plain alternative part. Preview-only inconsistency (cosmetic), send path is correct."}
+  ]},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Editar conta (EmailAccounts dialog)", "issues": ["Console a11y warning on open: 'Missing `Description` or `aria-describedby={undefined}` for {DialogContent}' (appears for several dialogs, pre-existing Radix warning, not a new regression)"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter15.py", "/app/backend/tests/test_iter15_worker.py", "/app/test_reports/pytest/pytest_results_iter15.xml"],
+  "action_items": ["Optional: append the plain-text signature to content_text in /api/templates/preview for HTML templates so preview matches the multipart text part actually sent", "Optional: add DialogDescription/aria-describedby to dialogs to silence Radix a11y warnings"],
+  "critical_code_review_comments": [
+    "html_to_text now treats </p>,</div>,</tr>,</td>,</th>,</table>,</h1-6>,</li>,</ul>,</ol>,<br> as newlines, strips script/style/head, decodes entities and collapses blank lines - verified: no glued output for table/div/li/br-less signatures.",
+    "worker._send_job and _send_sequence_step both prefer smtp.signature_text (with variable substitution) and fall back to html_to_text(signature_html); plain-text-only templates send no HTML part (verified html_body == '' via patched send_email), HTML templates keep the untouched HTML signature (compose_email_html) plus a clean text alternative -> both required formats present.",
+    "Frontend htmlToPlainSig mirrors the backend converter (same block-tag list + textContent decoding), so the 'Gerar a partir do HTML' output matches what the server would derive."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter15.py", "/app/backend/tests/test_iter15_worker.py"],
+  "success_rate": {"backend": "100% (14/14 new, 206 total pass)", "frontend": "100% of tested flows"},
+  "seed_data_creation": "Temporary TEST_ contact/templates + email_jobs created inside worker tests and deleted in teardown (verified 0 residual TEST_ docs). Default SMTP account signature_text/signature_html were saved and restored; current default account signature_text = clean 5-line Carlos Santo signature.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "carlos.miguel@smartize.pt / 100%Smartize",
+  "context_for_next_testing_agent": "Signature text/plain feature is fully working (backend converter, per-account signature_text, preview, worker). Reusable tests: /app/backend/tests/test_iter15.py (API) and test_iter15_worker.py (patches worker.send_email to assert actual MIME text/html bodies - useful pattern since preview SMTP is fictitious). Only open nit: preview of HTML templates omits the text signature from content_text.",
+  "rca_of_the_issue": "Original bug came from a naive tag-strip conversion that removed block tags without inserting newlines, so a table/div-based signature collapsed into a single line. Fix (html_to_text rewrite + per-account signature_text with client/server generators) verified end to end."
+}

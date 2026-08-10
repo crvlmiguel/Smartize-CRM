@@ -380,20 +380,24 @@ async def preview_template(body: dict, user=Depends(get_current_user)):
     content_text = substitute(body.get("content_text", ""), variables)
     # Signature: use the one provided, or fall back to the default sending account.
     sig = body.get("signature_html")
+    sig_text_override = None
     if sig is None:
         smtp = await db.smtp_accounts.find_one({"is_default": True}) or await db.smtp_accounts.find_one({})
         sig = (smtp or {}).get("signature_html", "") if smtp else ""
+        sig_text_override = (smtp or {}).get("signature_text", "") if smtp else ""
     sig = substitute(sig or "", variables)
     if html_has_visible_content(content_html):
         # HTML template → preview the natural (non-boxed) HTML that will be sent.
         email_html = compose_email_html(content_html, sig)
         text_preview = content_text
     else:
-        # Plain-text template → preview shows the exact plain text, incl. signature as it is appended on send.
+        # Plain-text template → preview the exact text incl. the clean text signature that is appended on send.
         email_html = ""
         text_preview = content_text
-        if sig:
-            text_preview = (content_text + "\n\n" + html_to_text(sig)).strip()
+        sig_text = (sig_text_override or "").strip()
+        sig_text = substitute(sig_text, variables) if sig_text else html_to_text(sig)
+        if sig_text:
+            text_preview = (content_text + "\n\n" + sig_text).strip()
     return {
         "subject": substitute(body.get("subject", ""), variables),
         "content_html": content_html,

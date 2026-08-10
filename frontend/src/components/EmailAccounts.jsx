@@ -7,6 +7,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
@@ -23,7 +24,7 @@ import { SignatureEditor, SIGNATURE_TEMPLATE } from "@/components/SignatureEdito
 const EMPTY = {
   name: "", account_type: "smtp", from_name: "", from_email: "", host: "", port: 587,
   use_ssl: false, use_tls: true, username: "", password: "", reply_to: "",
-  signature_html: "", daily_limit: 200, status: "ativo", is_default: false,
+  signature_html: "", signature_text: "", daily_limit: 200, status: "ativo", is_default: false,
   imap_host: "", imap_port: 993, imap_username: "", imap_password: "",
 };
 
@@ -43,6 +44,17 @@ export default function EmailAccounts() {
 
   const load = () => api.get("/smtp").then((r) => setAccounts(r.data)).catch(() => {});
   useEffect(() => { load(); }, []);
+
+  const htmlToPlainSig = (html) => {
+    if (!html) return "";
+    let t = html.replace(/<(script|style|head)[^>]*>[\s\S]*?<\/\1>/gi, "");
+    t = t.replace(/<br\s*\/?>/gi, "\n");
+    t = t.replace(/<\/(p|div|tr|td|th|table|h[1-6]|li|ul|ol|blockquote|header|footer|section|article)>/gi, "\n");
+    const tmp = document.createElement("div");
+    tmp.innerHTML = t;
+    const text = tmp.textContent || tmp.innerText || "";
+    return text.split("\n").map((l) => l.replace(/[ \t]{2,}/g, " ").trim()).filter(Boolean).join("\n").trim();
+  };
 
   const startNew = () => { setEditing(null); setForm(EMPTY); setChoosing(true); };
   const pickType = (type) => {
@@ -242,6 +254,21 @@ export default function EmailAccounts() {
                 {!form.signature_html && <Button variant="outline" size="sm" onClick={() => setForm({ ...form, signature_html: SIGNATURE_TEMPLATE })} data-testid="use-signature-template">Usar modelo</Button>}
               </div>
               <SignatureEditor value={form.signature_html} onChange={(v) => setForm((f) => ({ ...f, signature_html: v }))} />
+
+              <div className="mt-5">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Assinatura em texto simples</span>
+                  <Button variant="outline" size="sm" data-testid="generate-signature-text"
+                    onClick={() => setForm((f) => ({ ...f, signature_text: htmlToPlainSig(f.signature_html) }))}>
+                    Gerar a partir do HTML
+                  </Button>
+                </div>
+                <Textarea value={form.signature_text || ""} rows={6} data-testid="signature-text-input"
+                  onChange={(e) => setForm({ ...form, signature_text: e.target.value })}
+                  className="font-mono text-sm leading-relaxed"
+                  placeholder={"Carlos Santo\nGrowth Manager – Smartize Portugal\nPhone: (+351) 968 537 603\nEmail: carlos.santo@smartize.pt\nwww.smartize.pt"} />
+                <p className="text-xs text-muted-foreground mt-1.5">Usada quando o email é enviado como texto simples (uma informação por linha). Se vazia, é gerada automaticamente a partir da assinatura HTML.</p>
+              </div>
             </div>
           </div>
           <DialogFooter className="gap-2">

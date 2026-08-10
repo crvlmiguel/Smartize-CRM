@@ -48,15 +48,34 @@ def substitute(text: str, variables: dict) -> str:
 
 
 def html_to_text(html: str) -> str:
+    """Convert HTML to clean plain text, treating block/table elements as line breaks
+    so structured signatures (name / role / phone / email / website) never end up glued together."""
     if not html:
         return ""
-    text = re.sub(r"(?i)<br\s*/?>", "\n", html)
-    text = re.sub(r"(?i)</p>", "\n\n", text)
+    text = html
+    # Drop non-visible sections entirely.
+    text = re.sub(r"(?is)<(script|style|head)\b[^>]*>.*?</\1>", "", text)
+    # Explicit line breaks.
+    text = re.sub(r"(?i)<br\s*/?>", "\n", text)
+    # Block/table element boundaries -> line break (each item on its own line).
+    text = re.sub(
+        r"(?i)</(p|div|tr|td|th|table|h[1-6]|li|ul|ol|blockquote|header|footer|section|article)>",
+        "\n", text,
+    )
+    # Strip remaining (inline) tags.
     text = re.sub(r"<[^>]+>", "", text)
-    text = re.sub(r"&nbsp;", " ", text)
-    text = re.sub(r"&amp;", "&", text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()
+    # Decode the common HTML entities.
+    for a, b in [("&nbsp;", " "), ("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"),
+                 ("&quot;", '"'), ("&#39;", "'"), ("&apos;", "'"), ("&#160;", " ")]:
+        text = text.replace(a, b)
+    text = text.replace("\xa0", " ")
+    # Tidy: trim each line, drop empty lines, collapse spaces within a line.
+    lines = []
+    for raw in text.split("\n"):
+        ln = re.sub(r"[ \t]{2,}", " ", raw).strip()
+        if ln:
+            lines.append(ln)
+    return "\n".join(lines).strip()
 
 
 def html_has_visible_content(html: str) -> bool:

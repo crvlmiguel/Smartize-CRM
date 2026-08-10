@@ -89,6 +89,7 @@ class SmtpCreate(BaseModel):
     password: str = ""
     reply_to: Optional[str] = None
     signature_html: str = ""
+    signature_text: str = ""
     daily_limit: int = 200
     status: str = "ativo"
     is_default: bool = False
@@ -111,6 +112,7 @@ class SmtpUpdate(BaseModel):
     password: Optional[str] = None
     reply_to: Optional[str] = None
     signature_html: Optional[str] = None
+    signature_text: Optional[str] = None
     daily_limit: Optional[int] = None
     status: Optional[str] = None
     is_default: Optional[bool] = None
