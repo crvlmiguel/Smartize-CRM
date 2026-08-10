@@ -176,6 +176,23 @@ def text_to_html(text: str) -> str:
     return _html.escape(text).replace("\n", "<br>\n")
 
 
+def _unique_marker(token: str) -> str:
+    """A per-email UNIQUE marker used to stop Gmail collapsing a repeated signature
+    into a "..." (show trimmed content) toggle.
+
+    IMPORTANT: fully-invisible tricks (opacity:0 / display:none) are no longer
+    reliable — Gmail ignores hidden nodes when deciding what is "duplicate" content
+    (and sometimes strips the CSS, making the text pop into view). The robust,
+    documented approach is a tiny, faintly-visible line of unique text: it is real
+    rendered content (so it makes each email unique) yet visually negligible."""
+    if not token:
+        return ""
+    return (
+        f'<div style="font-family:Arial,Helvetica,sans-serif;font-size:8px;'
+        f'line-height:10px;color:#e6e6e6;margin-top:14px;">{token}</div>'
+    )
+
+
 def compose_email_html(content_html: str, signature_html: str = "") -> str:
     """Assemble the final email HTML (content + signature) with a natural, non-boxed look."""
     inner = _ensure_img_email_safe(content_html or "")
@@ -185,13 +202,9 @@ def compose_email_html(content_html: str, signature_html: str = "") -> str:
 
 
 def inject_anti_trim(html: str, token: str) -> str:
-    """Insert a unique invisible marker so Gmail never collapses a repeated
-    signature into a "..." (show trimmed content) toggle."""
-    marker = (
-        f'<span style="display:inline-block;max-height:0;overflow:hidden;'
-        f'opacity:0;color:transparent;font-size:1px;line-height:1px;mso-hide:all;">'
-        f'ref:{token}</span>'
-    )
+    """Append a per-email unique marker (faintly-visible, at the very end) so Gmail
+    treats each message as new and never collapses the signature behind "..."."""
+    marker = _unique_marker(token)
     if "</body>" in html.lower():
         idx = html.lower().rfind("</body>")
         return html[:idx] + marker + html[idx:]

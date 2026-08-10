@@ -866,8 +866,9 @@ async def smtp_test_send(payload: SmtpTestSendRequest, user=Depends(get_current_
         f'<p>Esta é uma mensagem de teste enviada pela plataforma {company} Outreach.</p>'
         f'<p>Confirma que a sua conta de email e assinatura estão a funcionar corretamente.</p>'
     )
+    _uniq = uuid.uuid4().hex
     body = compose_email_html(content, sig)
-    body = inject_anti_trim(body, uuid.uuid4().hex)
+    body = inject_anti_trim(body, _uniq)
     try:
         await send_email(smtp, payload.to_email, f"Teste de envio — {company} Outreach", body, "Mensagem de teste")
         return {"success": True, "message": f"Email de teste enviado para {payload.to_email}"}

@@ -72,20 +72,22 @@ class TestAntiTrim:
         from email_service import inject_anti_trim
         html = "<html><body><p>Ola</p></body></html>"
         out = inject_anti_trim(html, "TOKEN-XYZ")
-        assert "ref:TOKEN-XYZ" in out
-        # placed before </body>, invisible
-        assert out.index("ref:TOKEN-XYZ") < out.lower().index("</body>")
-        assert "opacity:0" in out
+        assert "TOKEN-XYZ" in out
+        # placed before </body>
+        assert out.index("TOKEN-XYZ") < out.lower().index("</body>")
+        # faintly-visible (NOT opacity:0/display:none — those are unreliable in Gmail)
+        assert "opacity:0" not in out and "display:none" not in out
+        assert "font-size:8px" in out
 
     def test_open_pixel_bundles_unique_token_and_pixel(self):
         from email_service import inject_open_pixel
         base = "https://x.test"
         a = inject_open_pixel("<html><body>hi</body></html>", base, "TID-A")
         b = inject_open_pixel("<html><body>hi</body></html>", base, "TID-B")
-        assert "ref:TID-A" in a and "/api/track/open/TID-A.png" in a
-        assert "ref:TID-B" in b
+        assert "TID-A" in a and "/api/track/open/TID-A.png" in a
+        assert "TID-B" in b
         # unique per email -> Gmail cannot match a "repeated" signature
-        assert "ref:TID-A" not in b
+        assert "TID-A" not in b
 
 
 # --- worker path --------------------------------------------------------------
@@ -150,7 +152,7 @@ class TestWorker:
 
         assert "--tw-" not in captured["html"]
         assert captured["html"].count("/api/public/image/abc123") == 1
-        assert f'ref:{job["tracking_id"]}' in captured["html"]
+        assert job["tracking_id"] in captured["html"]
         assert "Ola TEST_Ana,<br>" in captured["html"]
         # plain-text fallback stays clean
         assert "<" not in captured["text"]

@@ -40,7 +40,13 @@ Fluxo: SMTP → Contactos → Grupos → Template → Campanha → Enviar/Agenda
 - **P2**: Campos personalizados na UI de contactos; slugs ASCII nos nav-testids.
 - **P3 (futuro)**: IA, SMS/WhatsApp.
 
-## Iteração 17b — Imagem da assinatura guardada BYTE-A-BYTE (original intacto) (2026-08-10)
+## Iteração 17c — "..." do Gmail: marcador único levemente visível (opacity:0 não é fiável) (2026-08-10)
+- **Estado**: o utilizador fez redeploy da correção anterior (token `opacity:0` no fim) e o "..." CONTINUOU. Pesquisa 2025/2026 confirma: **truques totalmente invisíveis (opacity:0/display:none) já não são fiáveis** — o Gmail ignora nós ocultos ao decidir o que é conteúdo "duplicado" (ou remove o CSS). O método fiável é **texto único, real e levemente visível**.
+- **Fix**: `inject_anti_trim`/`_unique_marker` passam a anexar no FIM do email um `<div>` com o token único do email em `font-size:8px;color:#e6e6e6` (cinzento muito claro, praticamente impercetível em fundo branco). É conteúdo renderizado real → cada email fica único → o Gmail não colapsa a assinatura. Removido o `opacity:0`. Corpo plain text e assinatura inalterados; imagem do logo intacta.
+- **Nota importante (mecanismo)**: o colapso ocorre sobretudo quando a MESMA caixa recebe emails quase idênticos (ex.: o utilizador a testar para a própria caixa repetidamente). Para prospects reais (email personalizado, primeiro contacto) normalmente não colapsa. O marcador único cobre ambos os casos.
+- **Testado**: 22 testes (iter17/16/17_api/17_upload) verdes. **Validação final em Gmail real depende de redeploy + teste do utilizador** (não testável no ambiente).
+
+
 - **Pedido do utilizador**: o logótipo deve chegar ao destinatário exatamente igual ao PNG original — sem redimensionar, converter, comprimir ou reconstruir; preservar transparência, cores, nitidez e proporções; sem adicionar qualquer fundo; tamanho visual controlado só pelo HTML.
 - **Causa**: `/api/uploads/image` redimensionava e voltava a gravar (recompressão) qualquer imagem com largura > 1600px, alterando o ficheiro.
 - **Fix**: endpoint reescrito para guardar os **bytes originais intactos** (valida que abre como imagem só para obter dimensões; nunca redimensiona/grava/converte). Content-Type derivado do formato real (PNG→image/png, etc.). Removido `MAX_UPLOAD_WIDTH`. `_ensure_img_email_safe`/`sanitize_signature_html` só ajustam estilo (nunca a imagem, nunca adicionam fundo). O editor de assinatura (`SignatureEditor.jsx`, botão de imagem) já pergunta a **largura em px** → controlo de tamanho sem perder qualidade.
