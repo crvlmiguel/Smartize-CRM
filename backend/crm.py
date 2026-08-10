@@ -3,8 +3,9 @@ from datetime import datetime, timedelta, timezone
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
+from pydantic import BaseModel, Field
+from typing import Optional, List, Dict, Any, Literal
+import copy
 
 from core import db, now_utc
 from auth import get_current_user
@@ -33,9 +34,9 @@ def s(doc):
 class Stage(BaseModel):
     id: str
     name: str
-    type: str = "open"  # open | won | lost
+    type: Literal["open", "won", "lost"] = "open"
     color: str = "#64748b"
-    probability: int = 0
+    probability: int = Field(default=0, ge=0, le=100)
 
 
 class PipelineCreate(BaseModel):
@@ -176,8 +177,8 @@ async def list_pipelines(user=Depends(get_current_user)):
 
 @crm.post("/pipelines")
 async def create_pipeline(payload: PipelineCreate, user=Depends(get_current_user)):
-    stages = [st.model_dump() for st in payload.stages] if payload.stages else DEFAULT_STAGES
-    doc = {"name": payload.name, "stages": stages, "created_at": now_utc().isoformat()}
+    stages = [st.model_dump() for st in payload.stages] if payload.stages else copy.deepcopy(DEFAULT_STAGES)
+    doc = {"name": payload.name, "stages": stages, "is_default": False, "created_at": now_utc().isoformat()}
     res = await db.pipelines.insert_one(doc)
     doc["_id"] = res.inserted_id
     return s(doc)
@@ -185,11 +186,25 @@ async def create_pipeline(payload: PipelineCreate, user=Depends(get_current_user
 
 @crm.put("/pipelines/{pid}")
 async def update_pipeline(pid: str, payload: PipelineUpdate, user=Depends(get_current_user)):
+    existing = await db.pipelines.find_one({"_id": _oid(pid)})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Pipeline não encontrado")
     updates = {}
     if payload.name is not None:
         updates["name"] = payload.name
     if payload.stages is not None:
-        updates["stages"] = [st.model_dump() for st in payload.stages]
+        new_stages = [st.model_dump() for st in payload.stages]
+        updates["stages"] = new_stages
+        # Reassign deals whose stage was removed to the first remaining stage.
+        new_ids = {st["id"] for st in new_stages}
+        old_ids = {st["id"] for st in existing.get("stages", [])}
+        removed = old_ids - new_ids
+        if removed and new_stages:
+            fallback = new_stages[0]
+            await db.deals.update_many(
+                {"pipeline_id": pid, "stage_id": {"$in": list(removed)}},
+                {"$set": {"stage_id": fallback["id"], "status": "open"}},
+            )
     await db.pipelines.update_one({"_id": _oid(pid)}, {"$set": updates})
     return s(await db.pipelines.find_one({"_id": _oid(pid)}))
 
@@ -305,6 +320,8 @@ async def move_deal(did: str, payload: MoveDeal, user=Depends(get_current_user))
     if not deal:
         raise HTTPException(status_code=404, detail="Negócio não encontrado")
     pipeline = await db.pipelines.find_one({"_id": _oid(deal["pipeline_id"])})
+    if not pipeline:
+        raise HTTPException(status_code=400, detail="Pipeline do negócio não encontrado")
     stage = next((st for st in pipeline["stages"] if st["id"] == payload.stage_id), None)
     if not stage:
         raise HTTPException(status_code=400, detail="Etapa inválida")

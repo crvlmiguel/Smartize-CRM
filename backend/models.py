@@ -18,6 +18,7 @@ class RegisterRequest(BaseModel):
 class ContactCreate(BaseModel):
     first_name: str = ""
     last_name: str = ""
+    saudacao: str = ""
     company: str = ""
     position: str = ""
     email: str
@@ -34,6 +35,7 @@ class ContactCreate(BaseModel):
 class ContactUpdate(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
+    saudacao: Optional[str] = None
     company: Optional[str] = None
     position: Optional[str] = None
     email: Optional[str] = None

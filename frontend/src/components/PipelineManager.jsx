@@ -34,6 +34,7 @@ export default function PipelineManager({ open, onOpenChange, pipelines, selecte
   const [stages, setStages] = useState([]);
   const [dragIdx, setDragIdx] = useState(null);
   const [toDelete, setToDelete] = useState(null);
+  const [dirty, setDirty] = useState(false);
 
   const current = pipelines.find((p) => p.id === pid);
 
@@ -44,9 +45,11 @@ export default function PipelineManager({ open, onOpenChange, pipelines, selecte
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const selectPipeline = (p) => {
+    if (dirty && p.id !== pid && !window.confirm("Tem alterações não guardadas neste pipeline. Descartá-las?")) return;
     setPid(p.id);
     setName(p.name);
     setStages((p.stages || []).map((s) => ({ ...s })));
+    setDirty(false);
   };
 
   const createPipeline = async () => {
@@ -74,15 +77,17 @@ export default function PipelineManager({ open, onOpenChange, pipelines, selecte
     } catch (e) { toast.error(apiError(e)); }
   };
 
-  const updateStage = (i, k, v) => setStages((s) => s.map((st, idx) => (idx === i ? { ...st, [k]: v } : st)));
-  const removeStage = (i) => setStages((s) => s.filter((_, idx) => idx !== i));
+  const updateStage = (i, k, v) => { setDirty(true); setStages((s) => s.map((st, idx) => (idx === i ? { ...st, [k]: v } : st))); };
+  const removeStage = (i) => { setDirty(true); setStages((s) => s.filter((_, idx) => idx !== i)); };
   const addStageAt = (i) => {
+    setDirty(true);
     const st = { id: newId(), name: "Nova etapa", type: "open", color: STAGE_COLORS[stages.length % STAGE_COLORS.length], probability: 0 };
     setStages((s) => { const c = [...s]; c.splice(i, 0, st); return c; });
   };
 
   const onDrop = (i) => {
     if (dragIdx === null || dragIdx === i) { setDragIdx(null); return; }
+    setDirty(true);
     setStages((s) => {
       const c = [...s];
       const [moved] = c.splice(dragIdx, 1);
@@ -105,6 +110,7 @@ export default function PipelineManager({ open, onOpenChange, pipelines, selecte
         })),
       });
       toast.success("Pipeline guardado");
+      setDirty(false);
       await onChanged();
     } catch (e) { toast.error(apiError(e)); }
   };
@@ -134,7 +140,9 @@ export default function PipelineManager({ open, onOpenChange, pipelines, selecte
                     {!p.is_default && (
                       <button onClick={(e) => { e.stopPropagation(); setDefault(p); }} title="Definir como padrão" data-testid={`pm-setdefault-${p.id}`} className="p-1 rounded hover:bg-black/10"><Star size={13} /></button>
                     )}
-                    <button onClick={(e) => { e.stopPropagation(); setToDelete(p); }} title="Eliminar" data-testid={`pm-delete-${p.id}`} className="p-1 rounded hover:bg-black/10"><Trash2 size={13} /></button>
+                    {pipelines.length > 1 && (
+                      <button onClick={(e) => { e.stopPropagation(); setToDelete(p); }} title="Eliminar" data-testid={`pm-delete-${p.id}`} className="p-1 rounded hover:bg-black/10"><Trash2 size={13} /></button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -147,7 +155,7 @@ export default function PipelineManager({ open, onOpenChange, pipelines, selecte
                 <>
                   <div>
                     <Label className="text-xs">Nome do pipeline</Label>
-                    <Input value={name} data-testid="pm-pipeline-name" onChange={(e) => setName(e.target.value)} className="mt-1" />
+                    <Input value={name} data-testid="pm-pipeline-name" onChange={(e) => { setDirty(true); setName(e.target.value); }} className="mt-1" />
                   </div>
                   <div className="flex items-center justify-between">
                     <Label className="text-xs">Etapas</Label>

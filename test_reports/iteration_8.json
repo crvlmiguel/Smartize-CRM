@@ -1,0 +1,53 @@
+{
+  "summary": "Iteração 8 testada end-to-end (backend + frontend). Backend: 21 testes novos em /app/backend/tests/test_iter8.py — uploads de imagem (URL absoluta, /api/public/image sem auth, downscale a 1600px, rejeição de ficheiro não-imagem, 404 em id inválido, 401 sem token), /api/templates/preview (email_html com <!DOCTYPE>, tabela 600px, assinatura integrada e <img> normalizada com max-width:100%/height:auto), fallback texto→HTML, persistência de content_text, importação (preview de contagens/mapping job_title→position, colunas desconhecidas, ficheiro sem coluna email, import com mapping, mapping manual respeitado, rejeição 400 sem email mapeado) e pipeline de envio (campanha fica 'sending' com 1 destinatário + stats OK) + teste unitário de compose_email_html. 20/21 passaram; 1 falha real: contador 'incompletos' devolve sempre 0. Frontend: login OK; import em 2 passos (ajuda + exemplo CSV + resumo 4/2/1/1/0 + mapeamento pré-preenchido com Cargo→job_title), alteração manual de mapeamento respeitada na criação (Empresa recebeu o valor de job_title), botão Importar desativa-se ao desmapear Email e reativa ao remapear, toast '2 importados, 1 duplicados, 1 inválidos' e contactos persistidos; upload de logótipo na assinatura (sig-image → sig-image-input) insere <img width=150> com URL /api/public/image, pré-visualização mostra o logótipo (naturalWidth 320 → clientWidth 150) e 'Conta atualizada' persiste; upload de imagem no corpo do template (rte-image-input) igualmente OK; Preview do template abre iframe com srcDoc = email_html real (2 tabelas, imagens do corpo + assinatura), Desktop 640px ↔ Mobile 380px alterna corretamente. Regressão: todas as páginas (dashboard, contactos, grupos, templates, campanhas, negócios, estatísticas, configurações) carregam sem erros de consola.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/contacts/import/preview", "issue": "Contador 'incomplete' está sempre a 0: as células vazias do CSV vêm como NaN e str(NaN)='nan' passa o teste de 'não vazio' (linha 192 de api.py). Usar pd.isna()/normalizar antes de avaliar first_name/last_name. Teste que falha: test_preview_counts_and_mapping."},
+      {"endpoint": "POST /api/auth/login", "issue": "Sem lockout/rate-limit por brute force — 6 tentativas erradas devolvem sempre 401 (nunca 429) e o login válido seguinte funciona (playbook de auth pede bloqueio após 5 falhas)."},
+      {"endpoint": "CORS (server.py)", "issue": "allow_origins='*' combinado com allow_credentials=True — combinação inválida/insegura; definir origens explícitas via CORS_ORIGINS."},
+      {"endpoint": "POST /api/uploads/image", "issue": "URL devolvida depende de FRONTEND_URL; se a variável estiver vazia o url fica relativo ('/api/public/image/..') e a imagem deixa de resolver em clientes de email. Validar/failfast se FRONTEND_URL não estiver definida."},
+      {"endpoint": "email_service._ensure_img_email_safe", "issue": "Heurísticas por substring: 'height' já presente (ex.: 'line-height:1.4') impede height:auto, e 'border' presente (ex.: 'border-style:initial' que o execCommand injeta) impede border:0 — os <img> mantêm border-style:initial no email final."},
+      {"endpoint": "POST /api/uploads/image", "issue": "Imagens guardadas em base64 no MongoDB sem limite de quantidade nem GC — uploads substituídos/eliminados na assinatura ficam órfãos na coleção 'uploads' para sempre."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "SignatureEditor / RichTextEditor", "issue": "A largura da imagem é pedida com window.prompt() nativo (bloqueante, não estilizado, sem validação visual) — devia ser um input/dialog da UI. Além disso o execCommand normaliza o style e remove max-width:100%/height:auto do HTML guardado (só são re-injetados no servidor em compose_email_html), pelo que a pré-visualização em tempo real não é 100% igual ao email.", "selector": "[data-testid='sig-image'], [data-testid='rte-image-input']", "priority": "MEDIUM"},
+      {"component": "Templates — import/preview", "issue": "O backend devolve 'sample' (até 5 linhas) no /contacts/import/preview mas o passo 2 não mostra qualquer pré-visualização das linhas; o utilizador confirma o mapeamento às cegas.", "selector": "[data-testid='import-summary']", "priority": "LOW"},
+      {"component": "Contacts — import step 2", "issue": "No passo 2 não é visível o nome do ficheiro analisado nem o grupo de destino escolhido no passo 1 (só se vê ao voltar), o que dificulta a confirmação.", "selector": "[data-testid='import-dialog']", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Templates — preview-dialog (Mobile)", "issues": ["No modo Mobile o iframe fica com 380px mas o email usa uma tabela fixa de 600px, pelo que o conteúdo aparece cortado à direita (sem scroll/scale). Um cliente móvel real faz zoom-out; a pré-visualização devia aplicar transform:scale ou viewport de 375px com escala para ser realista."]},
+      {"screen": "Templates — preview-dialog", "issues": ["O dialog de preview abre sobre o dialog do template (duplo overlay) e o painel do email ocupa apenas ~1/3 da altura útil, deixando uma grande área cinzenta vazia."]},
+      {"screen": "SignatureEditor — SIGNATURE_TEMPLATE", "issues": ["O template de assinatura por omissão continua a apontar para https://via.placeholder.com/64 (serviço externo, atualmente indisponível → imagem quebrada no email). Substituir por upload/placeholder alojado."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter8.py", "/app/test_reports/pytest/iter8.xml", "/app/backend/tests/cleanup_iter8.py"],
+  "action_items": [
+    "Corrigir o contador 'incompletos' em /api/contacts/import/preview (NaN → 'nan' faz com que nunca seja detetado).",
+    "Mostrar as linhas de exemplo (campo 'sample') no passo 2 da importação e o nome do ficheiro/grupo escolhido.",
+    "Substituir window.prompt da largura da imagem por um controlo na UI (input/slider) no SignatureEditor e RichTextEditor.",
+    "Tornar o modo Mobile do preview realista (escala/zoom-out em vez de cortar o container de 600px).",
+    "Substituir via.placeholder.com no SIGNATURE_TEMPLATE por imagem alojada na plataforma.",
+    "Endurecer _ensure_img_email_safe (parse de propriedades CSS em vez de 'substring in style') e limpar border-style:initial injetado pelo execCommand.",
+    "CORS: usar origens explícitas com allow_credentials; adicionar lockout de login após 5 falhas (playbook).",
+    "Garantir FRONTEND_URL definida (ou derivar do request) para que /api/public/image devolva sempre URL absoluta."
+  ],
+  "critical_code_review_comments": [
+    "api.py import_contacts_preview: a verificação de 'incompleto' usa str(row.get(...)) sobre valores NaN do pandas — usar pd.isna() como já é feito na construção do 'sample'.",
+    "api.py import_contacts carrega TODOS os emails existentes para memória (find({}, {email:1}).to_list(100000)) em cada import/preview — não escala; usar índice único em contacts.email + query por lote.",
+    "api.py import_contacts insere contacto a contacto (await insert_one em loop) — usar insert_many em lotes.",
+    "upload_image guarda o binário em base64 no Mongo (documento ~33% maior e limite de 16MB); considerar GridFS ou storage de ficheiros, e apagar uploads órfãos.",
+    "api.py já tem 929 linhas — está acima do limite recomendado de 700; extrair contacts/import, uploads e templates para routers separados."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter8.py", "/app/backend/tests/cleanup_iter8.py", "/app/test_reports/iteration_8.json"],
+  "success_rate": {"backend": "95% (20/21; a única falha é o contador 'incompletos')", "frontend": "100% dos fluxos pedidos funcionaram"},
+  "seed_data_creation": "Criados e eliminados: contactos qa_imp_iter8_* (UI e API), grupo TEST_iter8_grp, templates TEST_iter8_*, campanha TEST_iter8_camp. Verificado no fim: 3 contactos seed (qa_ui*), templates apenas 'QA Template 1/2'. Settings globais foram limpos (estavam com company_name='TEST_Smartize3' e logo_url data-URL 1x1 deixados por iteração anterior → reposto para 'Smartize' e logo vazio). A conta de email 'QA SMTP' ficou com uma assinatura contendo o logótipo de teste (imagem azul 320x90 a 150px) — resultado do teste de upload; pode ser limpa se necessário.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "carlos.miguel@smartize.pt / 100%Smartize (auth por JWT no body + localStorage; não há cookie httpOnly de sessão — desvio ao playbook, apenas informativo)",
+  "context_for_next_testing_agent": "test_iter8.py cobre uploads/preview/import/envio e limpa os dados no fixture de módulo (correr com -n 0). Notas para Playwright: (1) o campo de texto simples do template está dentro de um <details> 'Versão texto simples (opcional)' — é preciso clicar para expandir antes de fill; (2) os uploads de imagem abrem window.prompt para a largura — registar page.on('dialog', lambda d: d.accept('150')) ANTES do set_input_files; (3) locator.content_frame é propriedade, usar page.frame_locator('[data-testid=\"preview-iframe\"]'); (4) as larguras do preview são 640px (desktop) e 380px (mobile).",
+  "rca_of_the_issue": "O contador 'incompletos' nunca dispara porque pandas converte células vazias em NaN e o código faz str(NaN)='nan', string não vazia; por isso qualquer linha sem nome é considerada completa. Reprodução: CSV com linha ',,email@x.com,Delta,Dev,' → counts.incomplete=0 (esperado 1)."
+}

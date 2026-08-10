@@ -1,15 +1,19 @@
 import io
+import os
 import re
+import json
+import base64
 from datetime import datetime, timezone, timedelta
 
 import pandas as pd
+from PIL import Image
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import Response, RedirectResponse
 
 from core import db, now_utc, encrypt_secret
 from auth import get_current_user
-from email_service import build_variable_map, substitute, test_smtp_connection, send_email
+from email_service import build_variable_map, substitute, test_smtp_connection, send_email, compose_email_html
 from worker import build_campaign_jobs, build_enrollments
 from models import (
     ContactCreate, ContactUpdate, GroupCreate, GroupUpdate,
@@ -120,8 +124,9 @@ async def delete_contact(contact_id: str, user=Depends(get_current_user)):
 HEADER_MAP = {
     "first_name": ["first_name", "primeiro nome", "nome", "first name", "firstname"],
     "last_name": ["last_name", "apelido", "sobrenome", "last name", "lastname"],
+    "saudacao": ["saudacao", "saudação", "greeting", "salutation", "tratamento"],
     "company": ["company", "empresa"],
-    "position": ["position", "cargo", "titulo", "título"],
+    "position": ["position", "cargo", "titulo", "título", "job_title", "jobtitle", "job title"],
     "email": ["email", "e-mail", "mail"],
     "phone": ["phone", "telefone", "telemovel", "telemóvel", "tel"],
     "city": ["city", "cidade"],
@@ -130,29 +135,102 @@ HEADER_MAP = {
 }
 
 
+def _read_dataframe(content: bytes, filename: str):
+    name = (filename or "").lower()
+    try:
+        if name.endswith(".csv"):
+            return pd.read_csv(io.BytesIO(content))
+        if name.endswith(".xlsx") or name.endswith(".xls"):
+            return pd.read_excel(io.BytesIO(content))
+        # fallback: try csv then excel
+        try:
+            return pd.read_csv(io.BytesIO(content))
+        except Exception:
+            return pd.read_excel(io.BytesIO(content))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Não foi possível ler o ficheiro: {e}")
+
+
+def _auto_map(columns):
+    """Return {field: column} auto-detected mapping and the list of unrecognised columns."""
+    col_index = {}
+    for field, aliases in HEADER_MAP.items():
+        for alias in aliases:
+            if alias in columns:
+                col_index[field] = alias
+                break
+    mapped_cols = set(col_index.values())
+    unknown = [c for c in columns if c not in mapped_cols]
+    return col_index, unknown
+
+
+@api.post("/contacts/import/preview")
+async def import_contacts_preview(file: UploadFile = File(...), user=Depends(get_current_user)):
+    content = await file.read()
+    dfr = _read_dataframe(content, file.filename)
+    dfr.columns = [str(c).strip().lower() for c in dfr.columns]
+    columns = list(dfr.columns)
+    col_index, unknown = _auto_map(columns)
+
+    total = len(dfr)
+    invalid = duplicates = incomplete = valid = 0
+    existing_emails = set(
+        d["email"] for d in await db.contacts.find({}, {"email": 1}).to_list(100000)
+    )
+    seen = set()
+    email_col = col_index.get("email")
+    sample = []
+    for _, row in dfr.iterrows():
+        raw_email = str(row.get(email_col, "")).strip().lower() if email_col else ""
+        if not valid_email(raw_email):
+            invalid += 1
+            continue
+        if raw_email in existing_emails or raw_email in seen:
+            duplicates += 1
+            continue
+        seen.add(raw_email)
+        valid += 1
+        fn = row.get(col_index.get("first_name", ""))
+        ln = row.get(col_index.get("last_name", ""))
+        fn = "" if pd.isna(fn) else str(fn).strip()
+        ln = "" if pd.isna(ln) else str(ln).strip()
+        if not fn and not ln:
+            incomplete += 1
+        if len(sample) < 5:
+            sample.append({field: ("" if pd.isna(row.get(col)) else str(row.get(col, "")).strip()) for field, col in col_index.items()})
+
+    return {
+        "columns": columns,
+        "mapping": col_index,
+        "unknown_columns": unknown,
+        "counts": {"total": total, "valid": valid, "invalid": invalid,
+                   "duplicates": duplicates, "incomplete": incomplete},
+        "sample": sample,
+        "has_email_column": bool(email_col),
+    }
+
+
 @api.post("/contacts/import")
 async def import_contacts(
     file: UploadFile = File(...),
     group_id: str = Form(""),
+    mapping: str = Form(""),
     user=Depends(get_current_user),
 ):
     content = await file.read()
-    name = (file.filename or "").lower()
-    try:
-        if name.endswith(".csv") or "csv" in (file.content_type or ""):
-            dfr = pd.read_csv(io.BytesIO(content))
-        else:
-            dfr = pd.read_excel(io.BytesIO(content))
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Não foi possível ler o ficheiro: {e}")
-
+    dfr = _read_dataframe(content, file.filename)
     dfr.columns = [str(c).strip().lower() for c in dfr.columns]
+
+    # Prefer an explicit mapping confirmed by the user; otherwise auto-detect.
     col_index = {}
-    for field, aliases in HEADER_MAP.items():
-        for alias in aliases:
-            if alias in dfr.columns:
-                col_index[field] = alias
-                break
+    if mapping:
+        try:
+            provided = json.loads(mapping)
+            col_index = {f: c for f, c in provided.items() if c and c in dfr.columns}
+        except Exception:
+            col_index = {}
+    if not col_index:
+        col_index, _ = _auto_map(list(dfr.columns))
 
     if "email" not in col_index:
         raise HTTPException(status_code=400, detail="Ficheiro sem coluna de email reconhecível")
@@ -179,7 +257,7 @@ async def import_contacts(
                 continue
             val = row.get(col, "")
             doc[field] = "" if pd.isna(val) else str(val).strip()
-        for f in ["first_name", "last_name", "company", "position", "phone", "city", "country", "website"]:
+        for f in ["first_name", "last_name", "saudacao", "company", "position", "phone", "city", "country", "website"]:
             doc.setdefault(f, "")
         await db.contacts.insert_one(doc)
         imported += 1
@@ -293,16 +371,81 @@ async def preview_template(body: dict, user=Depends(get_current_user)):
     if body.get("contact_id"):
         contact = await db.contacts.find_one({"_id": _oid(body["contact_id"])})
     if not contact:
-        contact = {"first_name": "João", "last_name": "Silva", "company": "Smartize",
+        contact = {"first_name": "João", "last_name": "Silva", "saudacao": "Caro", "company": "Smartize",
                    "position": "CEO", "email": "joao@exemplo.pt", "phone": "+351 900 000 000",
                    "city": "Lisboa", "country": "Portugal", "website": "smartize.pt",
                    "custom_fields": {}}
     variables = build_variable_map(contact)
+    content_html = substitute(body.get("content_html", ""), variables)
+    content_text = substitute(body.get("content_text", ""), variables)
+    # Signature: use the one provided, or fall back to the default sending account.
+    sig = body.get("signature_html")
+    if sig is None:
+        smtp = await db.smtp_accounts.find_one({"is_default": True}) or await db.smtp_accounts.find_one({})
+        sig = (smtp or {}).get("signature_html", "") if smtp else ""
+    sig = substitute(sig or "", variables)
+    inner = content_html or (content_text.replace("\n", "<br/>") if content_text else "")
+    email_html = compose_email_html(inner, sig)
     return {
         "subject": substitute(body.get("subject", ""), variables),
-        "content_html": substitute(body.get("content_html", ""), variables),
-        "content_text": substitute(body.get("content_text", ""), variables),
+        "content_html": content_html,
+        "content_text": content_text,
+        "email_html": email_html,
     }
+
+
+MAX_UPLOAD_WIDTH = 1600
+
+
+@api.post("/uploads/image")
+async def upload_image(file: UploadFile = File(...), user=Depends(get_current_user)):
+    raw = await file.read()
+    if len(raw) > 8 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Imagem demasiado grande (máx. 8MB)")
+    try:
+        img = Image.open(io.BytesIO(raw))
+        img.load()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Ficheiro de imagem inválido")
+    fmt = (img.format or "PNG").upper()
+    w, h = img.size
+    # Cap stored resolution to keep emails light; display width is set in the HTML.
+    if w > MAX_UPLOAD_WIDTH:
+        ratio = MAX_UPLOAD_WIDTH / float(w)
+        img = img.resize((MAX_UPLOAD_WIDTH, max(1, int(h * ratio))))
+        w, h = img.size
+        if fmt in ("JPEG", "JPG"):
+            if img.mode in ("RGBA", "P", "LA"):
+                img = img.convert("RGB")
+            save_fmt, content_type = "JPEG", "image/jpeg"
+        elif fmt == "WEBP":
+            save_fmt, content_type = "WEBP", "image/webp"
+        elif fmt == "GIF":
+            save_fmt, content_type = "GIF", "image/gif"
+        else:
+            save_fmt, content_type = "PNG", "image/png"
+        buf = io.BytesIO()
+        img.save(buf, format=save_fmt)
+        raw = buf.getvalue()
+    else:
+        content_type = file.content_type or f"image/{fmt.lower()}"
+    res = await db.uploads.insert_one({
+        "data": base64.b64encode(raw).decode(), "content_type": content_type,
+        "width": w, "height": h, "filename": file.filename or "image",
+        "created_at": now_utc().isoformat(),
+    })
+    base = os.environ.get("FRONTEND_URL", "").rstrip("/")
+    return {"url": f"{base}/api/public/image/{res.inserted_id}", "width": w, "height": h}
+
+
+@api.get("/public/image/{image_id}")
+async def public_image(image_id: str):
+    doc = await db.uploads.find_one({"_id": _oid(image_id)})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Imagem não encontrada")
+    data = base64.b64decode(doc["data"])
+    return Response(content=data, media_type=doc.get("content_type", "image/png"),
+                    headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 
 # ==================== SMTP ====================
@@ -715,19 +858,18 @@ async def smtp_test_send(payload: SmtpTestSendRequest, user=Depends(get_current_
         if logo.startswith("data:")
         else f'<div style="font-weight:bold;font-size:18px;color:#0055FF;margin-bottom:16px">{company}</div>'
     )
-    sample = {"first_name": "João", "last_name": "Silva", "company": "Smartize",
+    sample = {"first_name": "João", "last_name": "Silva", "saudacao": "Caro", "company": "Smartize",
               "position": "CEO", "email": payload.to_email, "phone": "+351 900 000 000",
               "city": "Lisboa", "country": "Portugal", "website": "smartize.pt", "custom_fields": {}}
     variables = build_variable_map(sample)
     sig = payload.signature_html if payload.signature_html is not None else smtp.get("signature_html", "")
     sig = substitute(sig or "", variables)
-    body = (
-        f'<div style="font-family:Arial,sans-serif">'
+    content = (
         f'{header}'
         f'<p>Esta é uma mensagem de teste enviada pela plataforma {company} Outreach.</p>'
         f'<p>Confirma que a sua conta de email e assinatura estão a funcionar corretamente.</p>'
-        f'<br/><div class="email-signature">{sig}</div></div>'
     )
+    body = compose_email_html(content, sig)
     try:
         await send_email(smtp, payload.to_email, f"Teste de envio — {company} Outreach", body, "Mensagem de teste")
         return {"success": True, "message": f"Email de teste enviado para {payload.to_email}"}

@@ -10,7 +10,7 @@ import aiosmtplib
 from core import decrypt_secret
 
 VARIABLE_KEYS = [
-    "first_name", "last_name", "full_name", "company", "position",
+    "first_name", "last_name", "saudacao", "full_name", "company", "position",
     "email", "phone", "city", "country", "website", "today",
 ]
 
@@ -21,6 +21,7 @@ def build_variable_map(contact: dict) -> dict:
     values = {
         "first_name": first,
         "last_name": last,
+        "saudacao": contact.get("saudacao", "") or "",
         "full_name": (first + " " + last).strip(),
         "company": contact.get("company", "") or "",
         "position": contact.get("position", "") or "",
@@ -69,6 +70,66 @@ def rewrite_links(html: str, base_url: str, tracking_id: str) -> str:
         tracked = f"{base_url}/api/track/click/{tracking_id}?url={email.utils.quote(url)}"
         return f'href={quote}{tracked}{quote}'
     return re.sub(r'href=(["\'])(.*?)\1', repl, html)
+
+
+EMAIL_FONT = "Arial, Helvetica, sans-serif"
+
+
+def _ensure_img_email_safe(html: str) -> str:
+    """Make every <img> resize gracefully in email clients without dropping an explicit width."""
+    if not html:
+        return ""
+    def repl(m):
+        tag = m.group(0)
+        sm = re.search(r'style=(["\'])(.*?)\1', tag, flags=re.I)
+        if sm:
+            existing = sm.group(2).rstrip().rstrip(";")
+            # Detect real CSS properties (not substrings like 'line-height'/'border-style').
+            def has_prop(css, prop):
+                return re.search(r'(^|;)\s*' + re.escape(prop) + r'\s*:', css, flags=re.I) is not None
+            # Drop border-* shorthands the browser injects (e.g. border-style:initial).
+            existing = re.sub(r'(^|;)\s*border(-[a-z]+)?\s*:[^;]*', r'\1', existing, flags=re.I)
+            existing = re.sub(r';{2,}', ';', existing).strip(";").strip()
+            extra = []
+            if not has_prop(existing, "max-width"):
+                extra.append("max-width:100%")
+            if not has_prop(existing, "height"):
+                extra.append("height:auto")
+            extra.append("border:0")
+            merged = ";".join([p for p in [existing] + extra if p])
+            return tag[:sm.start()] + f'style="{merged}"' + tag[sm.end():]
+        return re.sub(r"<img\b", '<img style="max-width:100%;height:auto;border:0;"', tag, count=1, flags=re.I)
+    return re.sub(r"<img\b[^>]*>", repl, html, flags=re.I)
+
+
+def wrap_email_html(inner_html: str) -> str:
+    """Wrap content in an email-safe, table-based, 600px responsive container with inline styles."""
+    return (
+        '<!DOCTYPE html><html lang="pt"><head>'
+        '<meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
+        '<meta http-equiv="Content-Type" content="text/html; charset=utf-8"></head>'
+        '<body style="margin:0;padding:0;background-color:#f4f4f5;-webkit-text-size-adjust:100%;">'
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f4f5;">'
+        '<tr><td align="center" style="padding:24px 12px;">'
+        '<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" '
+        'style="width:600px;max-width:600px;background-color:#ffffff;border-radius:8px;border:1px solid #e4e4e7;">'
+        f'<tr><td style="padding:28px 32px;font-family:{EMAIL_FONT};font-size:15px;line-height:1.6;color:#0a0a0a;word-break:break-word;">'
+        f'{inner_html}'
+        '</td></tr></table>'
+        '</td></tr></table></body></html>'
+    )
+
+
+def compose_email_html(content_html: str, signature_html: str = "") -> str:
+    """Assemble the final, email-client-safe HTML document (content + signature)."""
+    inner = _ensure_img_email_safe(content_html or "")
+    if signature_html:
+        inner += (
+            '<div style="margin-top:24px;padding-top:16px;border-top:1px solid #e4e4e7;">'
+            f'{_ensure_img_email_safe(signature_html)}</div>'
+        )
+    return wrap_email_html(inner)
 
 
 def inject_open_pixel(html: str, base_url: str, tracking_id: str) -> str:

@@ -176,11 +176,15 @@ export default function Negocios() {
                         <GripVertical size={14} className="text-muted-foreground shrink-0" />
                       </div>
                       {d.company && <div className="text-xs text-muted-foreground truncate">{d.company}</div>}
+                      {d.contact_name && <div className="text-xs text-muted-foreground truncate">{d.contact_name}</div>}
                       <div className="flex items-center justify-between mt-2">
                         <span className="text-xs font-mono text-primary flex items-center gap-0.5"><Euro size={11} />{Number(d.value || 0).toLocaleString("pt-PT")}</span>
-                        <div className="flex gap-0.5">
-                          <button onClick={() => openEdit(d)} data-testid={`edit-deal-${d.id}`} className="p-1 rounded hover:bg-secondary text-muted-foreground"><Pencil size={13} /></button>
-                          <button onClick={() => setDealToDelete(d)} data-testid={`delete-deal-${d.id}`} className="p-1 rounded hover:bg-secondary text-destructive"><Trash2 size={13} /></button>
+                        <div className="flex items-center gap-1">
+                          {d.probability > 0 && <span className="text-[10px] font-medium bg-secondary text-muted-foreground rounded px-1.5 py-0.5">{d.probability}%</span>}
+                          <div className="flex gap-0.5">
+                            <button onClick={() => openEdit(d)} data-testid={`edit-deal-${d.id}`} className="p-1 rounded hover:bg-secondary text-muted-foreground"><Pencil size={13} /></button>
+                            <button onClick={() => setDealToDelete(d)} data-testid={`delete-deal-${d.id}`} className="p-1 rounded hover:bg-secondary text-destructive"><Trash2 size={13} /></button>
+                          </div>
                         </div>
                       </div>
                       {d.tags?.length > 0 && <div className="flex flex-wrap gap-1 mt-2">{d.tags.map((t) => <span key={t} className="text-[10px] bg-primary/10 text-primary rounded px-1.5">{t}</span>)}</div>}

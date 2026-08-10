@@ -40,6 +40,28 @@ Fluxo: SMTP → Contactos → Grupos → Template → Campanha → Enviar/Agenda
 - **P2**: Campos personalizados na UI de contactos; slugs ASCII nos nav-testids.
 - **P3 (futuro)**: IA, SMS/WhatsApp.
 
+## Iteração 8-10 — Emails email-safe, upload de logótipo, importação com mapeamento, campo Saudação (2026-08-10)
+- **Assinatura/logótipo**: upload direto de imagem (POST /api/uploads/image, servida em /api/public/image/{id}), inserção email-safe com largura fixa + `max-width:100%`; removido placeholder externo via.placeholder.com.
+- **HTML email-safe**: `compose_email_html`/`wrap_email_html` (container de tabela 600px, CSS inline) aplicado no envio (worker) e test-send; `_ensure_img_email_safe` normaliza `<img>` (remove border-* injetado, adiciona border:0/max-width/height:auto). Plain Text intacto.
+- **Preview realista**: /api/templates/preview devolve `email_html` (documento final); Templates mostra iframe com toggle Desktop 640px / Mobile 380px.
+- **Importação de contactos**: painel de ajuda + exemplo CSV; POST /api/contacts/import/preview (contagens encontrados/válidos/inválidos/duplicados/incompletos, mapeamento auto, colunas desconhecidas, sample); import em 2 passos com mapeamento confirmável (Form `mapping` JSON) e pré-visualização das primeiras linhas.
+- **Campo Saudação (novo)**: coluna `saudacao` na importação (aliases saudacao/saudação/greeting/salutation/tratamento), guardada verbatim; variável `{{saudacao}}`/`{saudacao}` nos templates/assinatura; campo no formulário e coluna na tabela de contactos.
+- **Correções**: contador "incompletos" (pd.isna); warning React `value` null nas contas de email (openEdit normaliza null→"").
+- **Testado**: iter8 20/21→corrigido, iter9 22/22 (100%), iter10 frontend 100%. SMTP do preview é fictício (envio real não validado).
+- **Backlog não bloqueante**: a11y DialogDescription (contact/smtp/template dialogs); escala do preview Mobile; import com insert_many + índice único; lockout de login + CORS explícito.
+
+## Pendente — Ligação automática do Gmail (OAuth 2.0 / Gmail API)
+- **PAUSADO — a aguardar credenciais do utilizador**: GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET (Google Cloud, Gmail API + OAuth consent). Redirect URIs a registar: `https://outreach.smartize.pt/api/oauth/gmail/callback` e o do preview. Objetivo: botão "Ligar Gmail" (OAuth, sem App Password) para enviar via Gmail API, mantendo contas SMTP a funcionar em paralelo.
+
+## Iteração 7 — Pipelines editáveis (Pipedrive-like) + Criação de negócios (2026-07-28)
+
+
+- **Pipelines totalmente configuráveis** (`/negocios` → "Gerir pipelines", `PipelineManager.jsx`): criar/renomear/eliminar pipelines (ilimitados), definir padrão (`is_default`), editor de etapas com nome, **cor** (color picker), **probabilidade (%)**, **tipo** (aberta/ganho/perdido), **reordenar por drag&drop**, inserir no topo/entre/no fim e eliminar. Backend `Stage` com `color`+`probability` (Field ge=0/le=100, type Literal); `list_pipelines` enriquece etapas legadas; endpoints CRUD + `/pipelines/{id}/set-default`; delete promove novo padrão.
+- **Criação de negócios (2 formas)**: (1) a partir de um Contacto — botão "+ Criar Negócio" navega para /negocios e abre o `deal-dialog` **pré-preenchido** (nome, empresa, email, telefone, cargo, website; histórico de emails + campanha de origem copiados no backend ao guardar); (2) diretamente em Negócios com Pipeline + Etapa inicial selecionáveis. Deal herda a probabilidade da etapa; cards do Kanban mostram contacto + probabilidade; colunas com ponto colorido da etapa.
+- **Correções (test iter7)**: PUT pipeline inexistente → 404; validação de probabilidade (422 se >100); remover etapa **realoca deals órfãos** para a 1ª etapa; `move_deal` atualiza probabilidade e limpa `lost_reason`, guarda contra pipeline inexistente; `create_pipeline` usa deepcopy + `is_default:false`; PipelineManager oculta delete com 1 pipeline e avisa alterações não guardadas ao trocar de pipeline.
+- **Testado**: frontend 100% dos fluxos (iteration_7.json); backend 20/22 (as 2 falhas eram gaps de validação, agora corrigidos e verificados via curl: 404/422/realocação/herança de probabilidade).
+- **Backlog design (não crítico)**: usar Calendar shadcn em vez de input date nativo; extrair deal-dialog para componente; lockout de brute force no login (fora de âmbito, requer integração de auth).
+
 ## Iteração 6 — CRM + Sequências (2026-07-28)
 - **Campanhas com Sequências**: wizard passo 1 com interruptor "Ativar sequência de emails"; construtor de passos (email inicial + N follow-ups) com template, atraso (dias/horas) e tipo de envio (novo email / responder na mesma thread). Backend `is_sequence`+`steps` (SequenceStep). Worker `process_sequences`/`build_enrollments` envia por contacto e para automaticamente quando o contacto responde (respondido/bounce/descadastrado).
 - **CRM de Negócios (Kanban)** em `/negocios`: pipelines com etapas pt-PT, deals com valor/probabilidade/data de fecho, drag&drop entre etapas, histórico, converter contacto → negócio (botão nos Contactos, endpoint `/api/contacts/{id}/convert`).

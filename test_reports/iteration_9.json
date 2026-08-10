@@ -1,0 +1,42 @@
+{
+  "summary": "Iteração 9 testada end-to-end (backend + frontend). Backend: 22 testes novos em /app/backend/tests/test_iter9.py — TODOS PASSARAM. Cobertura: (1) SAUDAÇÃO na importação — /contacts/import/preview auto-mapeia o cabeçalho acentuado 'Saudação'→saudacao, counts corretos (total 3, válidos 2, inválidos 1) e o contador 'incomplete' corrigido devolve 1 para a linha sem first_name/last_name; sample devolve 'Cara'/'Exmo.' verbatim; /contacts/import guarda 'Exmo.' EXATAMENTE (confirmado por GET /api/contacts, sem _id) e importação sem coluna saudacao continua a funcionar (saudacao=''). (2) CRUD do contacto — POST/GET/PUT persistem saudacao ('Exma. Sra.' → 'Cara') sem alterar outros campos. (3) Variável no template — /templates/preview substitui {saudacao} e {{saudacao}} por 'Caro' (contacto exemplo) no subject/content_html/email_html e usa a saudação real quando é passado contact_id ('Exmo. Sr. Pedro'); content_text também é substituído e vai para o email_html. (4) IMG email-safe — <img style='line-height:1.4;border-style:initial;width:120px'> devolve 'line-height:1.4;width:120px;max-width:100%;height:auto;border:0' (sem border-style, sem ';;', width e line-height preservados); img sem style recebe defaults; teste unitário de build_variable_map/_ensure_img_email_safe/substitute OK. (5) Regressão: /contacts /groups /templates /campaigns /dashboard /pipelines /deals /tasks /automations /settings /smtp todos 200.\nFrontend (Playwright, 1920x1080): login OK; formulário de contacto tem 'Saudação' (contact-saudacao-input); painel de ajuda e exemplo CSV listam saudacao; após 'Analisar ficheiro' o passo 2 mostra import-file-info com o nome do ficheiro, resumo 3/2/1/0/1 (INCOMPLETOS=1 — correção validada na UI), map-select-saudacao auto-detetado como 'saudação' e import-sample com as colunas mapeadas e 'Exmo.' visível; após confirmar, o contacto importado abre em edição com saudacao='Exmo.' exato, edição para 'Cara' persiste. Templates: dropdown do assunto tem variable-saudacao (insere {saudacao}), rte-variable tem {saudacao}, preview mostra 'Caro João' no assunto e no iframe e o <img> aparece normalizado (sem border-style, com border:0/max-width/height:auto/width:120px); toggle Desktop 640px ↔ Mobile 380px OK. Assinatura (Configurações → Contas de Email → Editar): sig-variable inclui {saudacao} e não há qualquer referência a via.placeholder.com (imagens da assinatura vêm de /api/public/image). Navegação regressiva em /contactos /grupos /campanhas /negocios /estatisticas sem elementos de erro.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "email_service.VARIABLE_KEYS", "issue": "Lista VARIABLE_KEYS (linhas 12-15) não inclui 'saudacao' e está morta (nenhum consumidor no repositório) — risco de divergência futura entre a lista de variáveis do frontend e do backend. Remover ou passar a ser a fonte única usada por build_variable_map/frontend."},
+      {"endpoint": "email_service._ensure_img_email_safe", "issue": "Border explicitamente definido pelo utilizador (ex.: style='border:2px solid red') é sempre removido e substituído por border:0 — comportamento intencional para email, mas silenciosamente ignora a escolha do utilizador (confirmado por teste)."},
+      {"endpoint": "POST /api/contacts/import", "issue": "Persistem os problemas de escala da iteração 8: carrega todos os emails para memória (to_list(100000)) e faz insert_one em loop; sem índice único em contacts.email."},
+      {"endpoint": "POST /api/auth/login", "issue": "Continua sem lockout/rate-limit após 5 falhas (desvio ao playbook de auth) e CORS mantém allow_origins='*' com allow_credentials=True."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "EmailAccounts (dialog Editar conta)", "issue": "Warning React na consola: \"`value` prop on `input` should not be null\" ao abrir a conta de email (campos opcionais como reply_to/IMAP vêm null da API) — usar '' como fallback.", "selector": "[data-testid='smtp-dialog']", "priority": "LOW"},
+      {"component": "Contacts — tabela", "issue": "A coluna 'Saudação' não é exibida na listagem de contactos (só no formulário/import), pelo que o utilizador não vê o valor importado sem abrir cada contacto.", "selector": "[data-testid='contacts-page']", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Templates — preview-dialog", "issues": ["Mantém-se o comportamento da iteração 8: o dialog de preview abre sobre o dialog do template (duplo overlay) e o email ocupa ~1/3 da altura útil, com grande área cinzenta vazia; no modo Mobile (380px) o container de 600px continua cortado em vez de escalado."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter9.py", "/app/test_reports/pytest/iter9.xml"],
+  "action_items": [
+    "Opcional: mostrar a coluna/valor 'Saudação' na tabela de contactos.",
+    "Corrigir warning React de `value` null no dialog de conta de email (EmailAccounts).",
+    "Limpar/unificar email_service.VARIABLE_KEYS (falta 'saudacao' e está sem uso).",
+    "Pendentes de iterações anteriores (não bloqueantes): escala do preview Mobile, lockout de login, CORS explícito, insert_many + índice único no import."
+  ],
+  "critical_code_review_comments": [
+    "email_service.py: VARIABLE_KEYS está desatualizada (sem 'saudacao') e não é usada — remover para evitar confusão sobre a lista canónica de variáveis.",
+    "api.py continua com 933 linhas (> limite de 700): extrair contacts/import, uploads e templates para routers separados.",
+    "api.py import_contacts: insert_one em loop + set completo de emails em memória; usar insert_many em lotes e índice único em contacts.email."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter9.py", "/app/test_reports/iteration_9.json"],
+  "success_rate": {"backend": "100% (22/22)", "frontend": "100% dos fluxos pedidos"},
+  "seed_data_creation": "Criados e eliminados contactos qa_saud_iter9_* (API) e qa_saud_iter9ui_* (UI). Verificado no fim: restam apenas os 3 contactos seed qa_ui1/2/3@example.com e os templates 'QA Template 1/2'. O template TEST_iter9_saudacao não foi guardado (apenas pré-visualizado). A conta 'QA SMTP' mantém a assinatura com o logótipo de teste da iteração 8.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "carlos.miguel@smartize.pt / 100%Smartize (JWT no body + localStorage)",
+  "context_for_next_testing_agent": "test_iter9.py (correr com -n 0) cobre saudacao (import/CRUD/preview), contador incomplete e normalização de <img>; os contactos criados são apagados na teardown do módulo. Notas Playwright: dashboard está em '/' (não '/dashboard') — esperar por texto 'Dashboard' após login; rotas PT: /contactos /grupos /templates /campanhas /negocios /estatisticas /configuracoes; CSV pode ser enviado por buffer em set_input_files; é necessário clicar 'Analisar ficheiro' antes do passo 2; a assinatura só é visível em Configurações → tab-contas → edit-smtp-{id}; usar page.frame_locator('[data-testid=\"preview-iframe\"]').",
+  "rca_of_the_issue": "Nenhum defeito novo encontrado. As três correções da iteração 8 foram confirmadas: (a) counts.incomplete usa agora pd.isna e devolve 1 para linhas sem nome; (b) _ensure_img_email_safe deteta propriedades CSS reais e remove border-*, pelo que border-style:initial desaparece e border:0/max-width/height:auto são injetados sem duplicar ';'; (c) SIGNATURE_TEMPLATE já não referencia via.placeholder.com."
+}

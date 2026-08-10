@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, Copy, Eye, Variable, FileText } from "lucide-react";
+import { Plus, Pencil, Trash2, Copy, Eye, Variable, FileText, Monitor, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,7 +20,7 @@ import { PageHeader, EmptyState } from "@/components/common";
 import { RichTextEditor } from "@/components/RichTextEditor";
 
 const VARIABLES = [
-  "first_name", "last_name", "full_name", "company", "position",
+  "first_name", "last_name", "saudacao", "full_name", "company", "position",
   "email", "phone", "city", "country", "website", "today",
 ];
 const EMPTY = { name: "", subject: "", content_html: "", content_text: "" };
@@ -32,6 +32,7 @@ export default function Templates() {
   const [form, setForm] = useState(EMPTY);
   const [toDelete, setToDelete] = useState(null);
   const [preview, setPreview] = useState(null);
+  const [previewMode, setPreviewMode] = useState("desktop");
   const [activeField, setActiveField] = useState("subject");
 
   const subjectRef = useRef(null);
@@ -159,12 +160,24 @@ export default function Templates() {
       </Dialog>
 
       <Dialog open={!!preview} onOpenChange={(o) => !o && setPreview(null)}>
-        <DialogContent className="max-w-2xl" data-testid="preview-dialog">
-          <DialogHeader><DialogTitle>Preview (dados de exemplo)</DialogTitle></DialogHeader>
-          <div className="border border-border rounded-md">
-            <div className="px-4 py-2 border-b border-border bg-secondary text-sm"><span className="text-muted-foreground">Assunto: </span><span className="font-semibold">{preview?.subject}</span></div>
-            <div className="p-4 max-h-[50vh] overflow-y-auto" dangerouslySetInnerHTML={{ __html: preview?.content_html || `<pre style="white-space:pre-wrap">${preview?.content_text || ""}</pre>` }} />
+        <DialogContent className="max-w-3xl" data-testid="preview-dialog">
+          <DialogHeader><DialogTitle>Pré-visualização do email (dados de exemplo)</DialogTitle></DialogHeader>
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <div className="text-sm truncate"><span className="text-muted-foreground">Assunto: </span><span className="font-semibold">{preview?.subject || "—"}</span></div>
+            <div className="flex gap-1 shrink-0">
+              <Button variant={previewMode === "desktop" ? "default" : "outline"} size="sm" onClick={() => setPreviewMode("desktop")} data-testid="preview-desktop"><Monitor size={14} className="mr-1" /> Desktop</Button>
+              <Button variant={previewMode === "mobile" ? "default" : "outline"} size="sm" onClick={() => setPreviewMode("mobile")} data-testid="preview-mobile"><Smartphone size={14} className="mr-1" /> Mobile</Button>
+            </div>
           </div>
+          <div className="bg-secondary/40 rounded-md p-4 flex justify-center max-h-[60vh] overflow-y-auto">
+            <iframe
+              title="email-preview"
+              data-testid="preview-iframe"
+              srcDoc={preview?.email_html || preview?.content_html || `<pre style="white-space:pre-wrap;font-family:Arial">${preview?.content_text || ""}</pre>`}
+              style={{ width: previewMode === "mobile" ? 380 : 640, height: 560, border: "none", background: "#f4f4f5" }}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">Esta pré-visualização usa o HTML final (email-safe) que é efetivamente enviado, incluindo a assinatura da conta predefinida.</p>
         </DialogContent>
       </Dialog>
 

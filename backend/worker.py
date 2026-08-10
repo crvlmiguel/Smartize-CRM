@@ -10,6 +10,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from core import db, now_utc
 from email_service import (
     build_variable_map, substitute, rewrite_links, inject_open_pixel, send_email, html_to_text,
+    compose_email_html,
 )
 
 logger = logging.getLogger("worker")
@@ -151,21 +152,20 @@ async def _send_job(campaign: dict, job: dict, smtp: dict):
     signature_html = smtp.get("signature_html") or ""
     if not signature_html and smtp.get("signature"):
         signature_html = smtp.get("signature").replace("\n", "<br/>")
+    signature_html = substitute(signature_html, variables) if signature_html else ""
+    if not html_body and text_body:
+        html_body = text_body.replace("\n", "<br/>")
     if signature_html:
-        signature_html = substitute(signature_html, variables)
-        if not html_body:
-            html_body = substitute(template.get("content_text", ""), variables).replace("\n", "<br/>")
-        html_body = html_body + f'<br/><br/><div class="email-signature">{signature_html}</div>'
         text_body = (text_body or "") + "\n\n" + html_to_text(signature_html)
 
     tracking_id = job["tracking_id"]
-    if html_body:
-        html_body = rewrite_links(html_body, BASE_URL, tracking_id)
-        html_body = inject_open_pixel(html_body, BASE_URL, tracking_id)
+    full_html = compose_email_html(html_body, signature_html)
+    full_html = rewrite_links(full_html, BASE_URL, tracking_id)
+    full_html = inject_open_pixel(full_html, BASE_URL, tracking_id)
 
     await db.email_jobs.update_one({"_id": job["_id"]}, {"$set": {"status": "sending"}})
     try:
-        message_id = await send_email(smtp, job["to_email"], subject, html_body, text_body)
+        message_id = await send_email(smtp, job["to_email"], subject, full_html, text_body)
         await db.email_jobs.update_one({"_id": job["_id"]}, {"$set": {
             "status": "sent",
             "sent_at": now_utc().isoformat(),
@@ -289,17 +289,16 @@ async def _send_sequence_step(campaign, enr, contact, smtp, steps, idx):
     text_body = substitute(template.get("content_text", ""), variables)
     html_body = substitute(template.get("content_html", ""), variables)
     sig = smtp.get("signature_html") or (smtp.get("signature") or "").replace("\n", "<br/>")
+    sig = substitute(sig, variables) if sig else ""
+    if not html_body and text_body:
+        html_body = text_body.replace("\n", "<br/>")
     if sig:
-        sig = substitute(sig, variables)
-        if not html_body:
-            html_body = text_body.replace("\n", "<br/>")
-        html_body += f'<br/><br/><div class="email-signature">{sig}</div>'
         text_body = (text_body or "") + "\n\n" + html_to_text(sig)
 
     tracking_id = str(ObjectId())
-    if html_body:
-        html_body = rewrite_links(html_body, BASE_URL, tracking_id)
-        html_body = inject_open_pixel(html_body, BASE_URL, tracking_id)
+    full_html = compose_email_html(html_body, sig)
+    full_html = rewrite_links(full_html, BASE_URL, tracking_id)
+    full_html = inject_open_pixel(full_html, BASE_URL, tracking_id)
 
     job_doc = {
         "campaign_id": str(campaign["_id"]), "contact_id": str(contact["_id"]),
@@ -311,7 +310,7 @@ async def _send_sequence_step(campaign, enr, contact, smtp, steps, idx):
     }
     jres = await db.email_jobs.insert_one(job_doc)
     try:
-        message_id = await send_email(smtp, contact["email"], subject, html_body, text_body,
+        message_id = await send_email(smtp, contact["email"], subject, full_html, text_body,
                                       in_reply_to=enr.get("last_message_id") if is_reply else None)
         await db.email_jobs.update_one({"_id": jres.inserted_id}, {"$set": {"status": "sent", "sent_at": now_utc().isoformat(), "message_id": message_id}})
         await db.contacts.update_one({"_id": contact["_id"]}, {"$set": {"last_activity": now_utc().isoformat()}})

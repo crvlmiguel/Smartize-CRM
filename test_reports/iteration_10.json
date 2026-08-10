@@ -1,0 +1,25 @@
+{
+  "summary": "Frontend-only validation of iteration-10 polish items: (1) 'Saudação' column in contacts table, (2) no React 'value prop on input should not be null' warning when editing an email account. Plus regression on 2-step contact import, {{saudacao}} in template preview and full navigation. All targeted items PASS with zero console errors.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dialogs (contact-dialog, smtp-dialog, template-dialog)", "issues": ["React a11y console warning: 'Missing `Description` or `aria-describedby={undefined}` for DialogContent' — add DialogDescription or aria-describedby to these dialogs (non-blocking, cosmetic/a11y)"]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": ["Optional: add DialogDescription/aria-describedby to contact-dialog, smtp-dialog and template-dialog to clear the remaining Radix a11y console warning"],
+  "critical_code_review_comments": [
+    "EmailAccounts.openEdit normalizes null->'' for all fields via Object.fromEntries — correct and generic; note it also converts null booleans/numbers to '' but no such nullable field exists today.",
+    "Contacts.jsx is ~390 lines with the import wizard inline; consider extracting the ImportDialog into its own component for maintainability."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "not tested (skipped per request)", "frontend": "100% (3/3 targeted areas + regression)" },
+  "seed_data_creation": "Created and deleted contact TESTQA Saudacao (testqa.saudacao@example.test); imported and deleted 2 contacts (qaimp1/qaimp2@example.test) via /tmp/qa_import.csv; temporarily set and reverted Reply-To on the existing 'QA SMTP' account; template with {{saudacao}} was previewed but never saved. No residual test data.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "carlos.miguel@smartize.pt / 100%Smartize",
+  "context_for_next_testing_agent": "Verified: contacts table headers = [Nome, Saudação, Email, Empresa, Grupo, Estado, Ações] (Saudação at index 1); contact-saudacao-<id> shows 'Caro' when set and '—' when cleared. Editing the SMTP account (edit-smtp-<id>) opens smtp-dialog with reply_to/imap_* as empty strings and NO 'value prop on input should not be null' warning; editing+saving Reply-To persists ('Conta atualizada'). Import 2-step: preview counts 2 found/2 valid, saudacao auto-mapped, sample shows Caro/Cara, import created both contacts with saudacao visible. Template preview substitutes {{saudacao}} -> 'Caro' in subject and body. Navigation across / /grupos /templates /campanhas /negocios /estatisticas /configuracoes: 0 console errors. Note: preview-template-button lives inside template-dialog (not on cards); template-text-input is inside a collapsed <details> ('Versão texto simples') so it must be expanded before filling.",
+  "rca_of_the_issue": "N/A — both reported polish items are implemented correctly and verified."
+}

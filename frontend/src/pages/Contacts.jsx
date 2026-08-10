@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, Upload, Search, X, Briefcase } from "lucide-react";
+import { Plus, Pencil, Trash2, Upload, Search, X, Briefcase, HelpCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,7 +24,7 @@ import { PageHeader, StatusBadge, EmptyState } from "@/components/common";
 
 const STATUSES = ["ativo", "respondido", "bounce", "descadastrado"];
 const EMPTY = {
-  first_name: "", last_name: "", company: "", position: "", email: "",
+  first_name: "", last_name: "", saudacao: "", company: "", position: "", email: "",
   phone: "", city: "", country: "", website: "", group_id: "none", status: "ativo", notes: "",
 };
 
@@ -43,6 +43,23 @@ export default function Contacts() {
   const [importFile, setImportFile] = useState(null);
   const [importGroup, setImportGroup] = useState("none");
   const [importing, setImporting] = useState(false);
+  const [importStep, setImportStep] = useState(1);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [importPreview, setImportPreview] = useState(null);
+  const [importMapping, setImportMapping] = useState({});
+
+  const IMPORT_FIELDS = [
+    { k: "first_name", l: "Primeiro nome" },
+    { k: "last_name", l: "Apelido" },
+    { k: "saudacao", l: "Saudação" },
+    { k: "email", l: "Email (obrigatório)" },
+    { k: "company", l: "Empresa" },
+    { k: "position", l: "Cargo" },
+    { k: "phone", l: "Telefone" },
+    { k: "city", l: "Cidade" },
+    { k: "country", l: "País" },
+    { k: "website", l: "Website" },
+  ];
 
   const load = useCallback(() => {
     const params = {};
@@ -84,16 +101,36 @@ export default function Contacts() {
     navigate("/negocios", { state: { contact: c } });
   };
 
-  const doImport = async () => {
+  const openImport = () => {
+    setImportFile(null); setImportGroup("none"); setImportStep(1);
+    setImportPreview(null); setImportMapping({}); setImportOpen(true);
+  };
+
+  const analyzeImport = async () => {
     if (!importFile) return toast.error("Selecione um ficheiro");
+    setAnalyzing(true);
+    const fd = new FormData();
+    fd.append("file", importFile);
+    try {
+      const { data } = await api.post("/contacts/import/preview", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      setImportPreview(data);
+      setImportMapping(data.mapping || {});
+      setImportStep(2);
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setAnalyzing(false); }
+  };
+
+  const doImport = async () => {
+    if (!importMapping.email) return toast.error("Mapeie a coluna do Email");
     setImporting(true);
     const fd = new FormData();
     fd.append("file", importFile);
     fd.append("group_id", importGroup === "none" ? "" : importGroup);
+    fd.append("mapping", JSON.stringify(importMapping));
     try {
       const { data } = await api.post("/contacts/import", fd, { headers: { "Content-Type": "multipart/form-data" } });
       toast.success(`${data.imported} importados, ${data.duplicates} duplicados, ${data.skipped} inválidos`);
-      setImportOpen(false); setImportFile(null); load();
+      setImportOpen(false); load();
     } catch (e) { toast.error(apiError(e)); }
     finally { setImporting(false); }
   };
@@ -109,7 +146,7 @@ export default function Contacts() {
   return (
     <div data-testid="contacts-page">
       <PageHeader title="Contactos" subtitle={`${contacts.length} contactos`}>
-        <Button variant="outline" onClick={() => setImportOpen(true)} data-testid="import-contacts-button"><Upload size={16} className="mr-1.5" /> Importar</Button>
+        <Button variant="outline" onClick={openImport} data-testid="import-contacts-button"><Upload size={16} className="mr-1.5" /> Importar</Button>
         <Button onClick={openNew} data-testid="new-contact-button"><Plus size={16} className="mr-1.5" /> Novo contacto</Button>
       </PageHeader>
 
@@ -144,6 +181,7 @@ export default function Contacts() {
             <TableHeader>
               <TableRow>
                 <TableHead>Nome</TableHead>
+                <TableHead>Saudação</TableHead>
                 <TableHead>Email</TableHead>
                 <TableHead>Empresa</TableHead>
                 <TableHead>Grupo</TableHead>
@@ -155,6 +193,7 @@ export default function Contacts() {
               {contacts.map((c) => (
                 <TableRow key={c.id} data-testid={`contact-row-${c.id}`}>
                   <TableCell className="font-medium">{`${c.first_name || ""} ${c.last_name || ""}`.trim() || "—"}</TableCell>
+                  <TableCell className="text-muted-foreground" data-testid={`contact-saudacao-${c.id}`}>{c.saudacao || "—"}</TableCell>
                   <TableCell className="font-mono text-xs">{c.email}</TableCell>
                   <TableCell>{c.company || "—"}</TableCell>
                   <TableCell>{groupName(c.group_id)}</TableCell>
@@ -177,6 +216,7 @@ export default function Contacts() {
           <div className="grid grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto pr-1">
             {field("first_name", "Primeiro nome")}
             {field("last_name", "Apelido")}
+            {field("saudacao", "Saudação (ex.: Caro, Cara, Exmo.)")}
             {field("email", "Email", "email")}
             {field("phone", "Telefone")}
             {field("company", "Empresa")}
@@ -214,31 +254,122 @@ export default function Contacts() {
       </Dialog>
 
       <Dialog open={importOpen} onOpenChange={setImportOpen}>
-        <DialogContent data-testid="import-dialog">
+        <DialogContent className="max-w-2xl" data-testid="import-dialog">
           <DialogHeader>
             <DialogTitle>Importar contactos</DialogTitle>
-            <DialogDescription>Ficheiro CSV ou Excel. Duplicados e emails inválidos são removidos automaticamente.</DialogDescription>
+            <DialogDescription>{importStep === 1 ? "Prepare o ficheiro e analise antes de importar." : "Confirme o mapeamento das colunas e reveja o resumo."}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Ficheiro (.csv, .xlsx)</Label>
-              <Input type="file" accept=".csv,.xlsx,.xls" data-testid="import-file-input"
-                onChange={(e) => setImportFile(e.target.files[0])} className="mt-1.5" />
+
+          {importStep === 1 ? (
+            <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
+              <div className="bg-secondary/40 border border-border rounded-md p-4 text-sm space-y-2" data-testid="import-help">
+                <div className="font-semibold flex items-center gap-1.5"><HelpCircle size={15} className="text-primary" /> Como preparar o ficheiro</div>
+                <ul className="list-disc pl-5 text-xs text-muted-foreground space-y-1">
+                  <li>Formatos aceites: <b>.csv</b> (recomendado, UTF-8) ou <b>.xlsx</b>.</li>
+                  <li>A primeira linha deve conter os <b>nomes das colunas</b>.</li>
+                  <li>Coluna <b>obrigatória</b>: <code>email</code>. As restantes são opcionais.</li>
+                  <li>Colunas suportadas: <code>first_name</code>, <code>last_name</code>, <code>saudacao</code>, <code>email</code>, <code>company</code>, <code>job_title</code>, <code>phone</code>, <code>city</code>, <code>country</code>, <code>website</code>.</li>
+                  <li>O campo <b>saudacao</b> é usado tal como está no ficheiro (ex.: "Caro", "Cara", "Exmo.") e fica disponível como variável <code>{"{{saudacao}}"}</code> nos templates.</li>
+                  <li>Campos vazios ficam em branco. <b>Emails inválidos</b> são ignorados. <b>Duplicados</b> (já existentes ou repetidos no ficheiro) são descartados automaticamente.</li>
+                  <li>Colunas não reconhecidas não são eliminadas em silêncio — serão indicadas no passo seguinte.</li>
+                </ul>
+                <div className="text-xs font-medium mt-2">Exemplo de CSV:</div>
+                <pre className="text-[11px] bg-card border border-border rounded p-2 overflow-x-auto" data-testid="import-example">first_name,last_name,saudacao,email,company,job_title,phone
+João,Silva,Caro,joao@empresa.pt,Empresa XYZ,CEO,+351900000000
+Maria,Costa,Cara,maria@empresa.pt,Empresa ABC,Marketing Director,+351911111111</pre>
+              </div>
+              <div>
+                <Label>Ficheiro (.csv, .xlsx)</Label>
+                <Input type="file" accept=".csv,.xlsx,.xls" data-testid="import-file-input"
+                  onChange={(e) => setImportFile(e.target.files[0])} className="mt-1.5" />
+              </div>
+              <div>
+                <Label>Adicionar ao grupo</Label>
+                <Select value={importGroup} onValueChange={setImportGroup}>
+                  <SelectTrigger className="mt-1.5" data-testid="import-group-select"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Sem grupo</SelectItem>
+                    {groups.map((g) => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            <div>
-              <Label>Adicionar ao grupo</Label>
-              <Select value={importGroup} onValueChange={setImportGroup}>
-                <SelectTrigger className="mt-1.5" data-testid="import-group-select"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Sem grupo</SelectItem>
-                  {groups.map((g) => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+          ) : (
+            <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
+              <div className="text-xs text-muted-foreground" data-testid="import-file-info">
+                Ficheiro: <b className="text-foreground">{importFile?.name}</b>
+                {importGroup !== "none" && <> · Grupo: <b className="text-foreground">{groups.find((g) => g.id === importGroup)?.name}</b></>}
+              </div>
+              <div className="grid grid-cols-5 gap-2 text-center" data-testid="import-summary">
+                {[
+                  { l: "Encontrados", v: importPreview?.counts.total, c: "text-foreground" },
+                  { l: "Válidos", v: importPreview?.counts.valid, c: "text-emerald-600" },
+                  { l: "Inválidos", v: importPreview?.counts.invalid, c: "text-red-600" },
+                  { l: "Duplicados", v: importPreview?.counts.duplicates, c: "text-amber-600" },
+                  { l: "Incompletos", v: importPreview?.counts.incomplete, c: "text-muted-foreground" },
+                ].map((s) => (
+                  <div key={s.l} className="bg-card border border-border rounded-md p-2">
+                    <div className={`font-heading font-black text-xl ${s.c}`}>{s.v ?? 0}</div>
+                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{s.l}</div>
+                  </div>
+                ))}
+              </div>
+
+              {importPreview?.unknown_columns?.length > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-md p-3 text-xs text-amber-800" data-testid="import-unknown-cols">
+                  Colunas não reconhecidas (serão ignoradas): {importPreview.unknown_columns.map((c) => <code key={c} className="mx-0.5">{c}</code>)}
+                </div>
+              )}
+
+              <div>
+                <div className="text-sm font-semibold mb-2">Mapeamento de colunas</div>
+                <div className="space-y-1.5">
+                  {IMPORT_FIELDS.map((f) => (
+                    <div key={f.k} className="grid grid-cols-2 items-center gap-3" data-testid={`map-row-${f.k}`}>
+                      <span className="text-sm">{f.l}</span>
+                      <Select value={importMapping[f.k] || "none"} onValueChange={(v) => setImportMapping((m) => ({ ...m, [f.k]: v === "none" ? undefined : v }))}>
+                        <SelectTrigger data-testid={`map-select-${f.k}`}><SelectValue placeholder="— (ignorar)" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">— (ignorar)</SelectItem>
+                          {(importPreview?.columns || []).map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ))}
+                </div>
+                {!importMapping.email && <p className="text-xs text-red-600 mt-2">É obrigatório mapear a coluna do Email.</p>}
+              </div>
+
+              {importPreview?.sample?.length > 0 && (
+                <div data-testid="import-sample">
+                  <div className="text-sm font-semibold mb-2">Pré-visualização (primeiras linhas)</div>
+                  <div className="overflow-x-auto border border-border rounded-md">
+                    <table className="w-full text-xs">
+                      <thead className="bg-secondary/60">
+                        <tr>{IMPORT_FIELDS.filter((f) => importMapping[f.k]).map((f) => <th key={f.k} className="px-2 py-1 text-left font-medium whitespace-nowrap">{f.l.replace(" (obrigatório)", "")}</th>)}</tr>
+                      </thead>
+                      <tbody>
+                        {importPreview.sample.map((row, i) => (
+                          <tr key={i} className="border-t border-border">
+                            {IMPORT_FIELDS.filter((f) => importMapping[f.k]).map((f) => <td key={f.k} className="px-2 py-1 whitespace-nowrap">{row[f.k] || "—"}</td>)}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
+          )}
+
           <DialogFooter>
+            {importStep === 2 && <Button variant="outline" onClick={() => setImportStep(1)} data-testid="import-back-button">Voltar</Button>}
             <Button variant="outline" onClick={() => setImportOpen(false)}>Cancelar</Button>
-            <Button onClick={doImport} disabled={importing} data-testid="confirm-import-button">{importing ? "A importar…" : "Importar"}</Button>
+            {importStep === 1 ? (
+              <Button onClick={analyzeImport} disabled={analyzing || !importFile} data-testid="analyze-import-button">{analyzing ? "A analisar…" : "Analisar ficheiro"}</Button>
+            ) : (
+              <Button onClick={doImport} disabled={importing || !importMapping.email} data-testid="confirm-import-button">{importing ? "A importar…" : `Importar ${importPreview?.counts.valid ?? 0} contactos`}</Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

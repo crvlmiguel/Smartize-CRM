@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import {
   Bold, Italic, Underline, Link2, Image as ImageIcon,
   AlignLeft, AlignCenter, AlignRight, AlignJustify, List, ListOrdered,
   Code2, Eye, PenTool, Type, Highlighter, Variable,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import api from "@/lib/api";
 
 const VARIABLES = [
-  "first_name", "last_name", "full_name", "company", "position",
+  "first_name", "last_name", "saudacao", "full_name", "company", "position",
   "email", "phone", "city", "country", "website", "today",
 ];
 const FONTS = ["Arial", "Helvetica", "Georgia", "Times New Roman", "Verdana", "Tahoma", "Courier New"];
@@ -19,6 +21,7 @@ const SIZES = [
 export function RichTextEditor({ value, onChange, minHeight = "260px" }) {
   const [mode, setMode] = useState("visual");
   const editorRef = useRef(null);
+  const fileRef = useRef(null);
 
   const hydrate = (node) => {
     editorRef.current = node;
@@ -43,7 +46,25 @@ export function RichTextEditor({ value, onChange, minHeight = "260px" }) {
     if (editorRef.current) onChange(editorRef.current.innerHTML);
   };
   const addLink = () => { const url = prompt("URL do link:", "https://"); if (url) exec("createLink", url); };
-  const addImage = () => { const url = prompt("URL da imagem (alojada externamente):", "https://"); if (url) insertHtml(`<img src="${url}" style="max-width:100%" alt="" />`); };
+  const pickImage = () => fileRef.current?.click();
+  const uploadAndInsert = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const fd = new FormData();
+    fd.append("file", file);
+    const t = toast.loading("A carregar imagem…");
+    try {
+      const { data } = await api.post("/uploads/image", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      const def = Math.min(data.width || 500, 560);
+      const input = window.prompt("Largura da imagem em pixels (máx. 560 para caber no email):", String(def));
+      const w = Math.max(20, Math.min(560, parseInt(input || def, 10) || def));
+      insertHtml(`<img src="${data.url}" width="${w}" style="width:${w}px;max-width:100%;height:auto;border:0;display:block;" alt="" />`);
+      toast.success("Imagem carregada", { id: t });
+    } catch (err) {
+      toast.error("Falha ao carregar a imagem", { id: t });
+    }
+  };
 
   const Btn = ({ onClick, title, children, testid }) => (
     <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={onClick} title={title}
@@ -95,7 +116,8 @@ export function RichTextEditor({ value, onChange, minHeight = "260px" }) {
             <Btn onClick={() => exec("justifyFull")} title="Justificado" testid="rte-justify"><AlignJustify size={15} /></Btn>
             <Sep />
             <Btn onClick={addLink} title="Inserir link" testid="rte-link"><Link2 size={15} /></Btn>
-            <Btn onClick={addImage} title="Inserir imagem" testid="rte-image"><ImageIcon size={15} /></Btn>
+            <Btn onClick={pickImage} title="Carregar imagem" testid="rte-image"><ImageIcon size={15} /></Btn>
+            <input ref={fileRef} type="file" accept="image/*" data-testid="rte-image-input" onChange={uploadAndInsert} className="hidden" />
             <select onChange={(e) => { if (e.target.value) { insertHtml(`{${e.target.value}}`); e.target.value = ""; } }} data-testid="rte-variable" className="h-8 text-xs border border-border rounded px-1 bg-white" title="Inserir variável">
               <option value="">Variável</option>
               {VARIABLES.map((v) => <option key={v} value={v}>{`{${v}}`}</option>)}

@@ -49,7 +49,12 @@ export default function EmailAccounts() {
     setForm(type === "google" ? { ...EMPTY, account_type: "google", ...GOOGLE_DEFAULTS } : { ...EMPTY, account_type: "smtp" });
     setChoosing(false); setOpen(true);
   };
-  const openEdit = (a) => { setEditing(a); setForm({ ...EMPTY, ...a, password: "", imap_password: "" }); setOpen(true); };
+  const openEdit = (a) => {
+    const clean = Object.fromEntries(Object.entries(a).map(([k, v]) => [k, v === null ? "" : v]));
+    setEditing(a);
+    setForm({ ...EMPTY, ...clean, password: "", imap_password: "" });
+    setOpen(true);
+  };
   const applyHostinger = () => setForm((f) => ({ ...f, host: "smtp.hostinger.com", port: 465, use_ssl: true, use_tls: false }));
 
   const save = async () => {

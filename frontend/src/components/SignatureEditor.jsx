@@ -1,22 +1,21 @@
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import {
   Bold, Italic, Underline, Link2, Image as ImageIcon,
   AlignLeft, AlignCenter, AlignRight, Code2, Eye, PenTool,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import api from "@/lib/api";
 
 const VARIABLES = [
-  "first_name", "last_name", "full_name", "company", "position",
+  "first_name", "last_name", "saudacao", "full_name", "company", "position",
   "email", "phone", "city", "country", "website", "today",
 ];
 const FONTS = ["Arial", "Helvetica", "Georgia", "Times New Roman", "Verdana", "Tahoma", "Courier New"];
 
 export const SIGNATURE_TEMPLATE = `<table cellpadding="0" cellspacing="0" style="font-family:Arial,sans-serif;color:#0A0A0A">
   <tr>
-    <td style="padding-right:16px;border-right:2px solid #0055FF">
-      <img src="https://via.placeholder.com/64" width="64" height="64" style="border-radius:6px" alt="logo" />
-    </td>
-    <td style="padding-left:16px">
+    <td style="padding-left:0">
       <div style="font-weight:bold;font-size:16px">{full_name}</div>
       <div style="color:#52525B;font-size:13px">{position} · {company}</div>
       <div style="margin-top:6px;font-size:12px">
@@ -24,6 +23,7 @@ export const SIGNATURE_TEMPLATE = `<table cellpadding="0" cellspacing="0" style=
         <span>{phone}</span><br/>
         <a href="https://{website}" style="color:#0055FF;text-decoration:none">{website}</a>
       </div>
+      <div style="margin-top:8px;font-size:11px;color:#71717A">Carregue o seu logótipo com o botão de imagem acima ↑</div>
     </td>
   </tr>
 </table>`;
@@ -31,6 +31,7 @@ export const SIGNATURE_TEMPLATE = `<table cellpadding="0" cellspacing="0" style=
 export function SignatureEditor({ value, onChange }) {
   const [mode, setMode] = useState("visual");
   const editorRef = useRef(null);
+  const fileRef = useRef(null);
 
   const hydrate = (node) => {
     editorRef.current = node;
@@ -55,7 +56,25 @@ export function SignatureEditor({ value, onChange }) {
     if (editorRef.current) onChange(editorRef.current.innerHTML);
   };
   const addLink = () => { const url = prompt("URL do link:", "https://"); if (url) exec("createLink", url); };
-  const addImage = () => { const url = prompt("URL da imagem (alojada externamente):", "https://"); if (url) insertHtml(`<img src="${url}" style="max-width:100%" alt="" />`); };
+  const pickImage = () => fileRef.current?.click();
+  const uploadAndInsert = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const fd = new FormData();
+    fd.append("file", file);
+    const t = toast.loading("A carregar imagem…");
+    try {
+      const { data } = await api.post("/uploads/image", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      const def = Math.min(data.width || 160, 160);
+      const input = window.prompt("Largura do logótipo em pixels (recomendado 120–180):", String(def));
+      const w = Math.max(20, Math.min(600, parseInt(input || def, 10) || def));
+      insertHtml(`<img src="${data.url}" width="${w}" style="width:${w}px;max-width:100%;height:auto;border:0;display:block;" alt="" />`);
+      toast.success("Imagem carregada", { id: t });
+    } catch (err) {
+      toast.error("Falha ao carregar a imagem", { id: t });
+    }
+  };
 
   const ToolBtn = ({ onClick, title, children, testid }) => (
     <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={onClick} title={title}
@@ -79,7 +98,8 @@ export function SignatureEditor({ value, onChange }) {
               <ToolBtn onClick={() => exec("underline")} title="Sublinhado" testid="sig-underline"><Underline size={15} /></ToolBtn>
               <div className="w-px h-5 bg-border mx-1" />
               <ToolBtn onClick={addLink} title="Link" testid="sig-link"><Link2 size={15} /></ToolBtn>
-              <ToolBtn onClick={addImage} title="Imagem" testid="sig-image"><ImageIcon size={15} /></ToolBtn>
+              <ToolBtn onClick={pickImage} title="Carregar imagem/logótipo" testid="sig-image"><ImageIcon size={15} /></ToolBtn>
+              <input ref={fileRef} type="file" accept="image/*" data-testid="sig-image-input" onChange={uploadAndInsert} className="hidden" />
               <div className="w-px h-5 bg-border mx-1" />
               <ToolBtn onClick={() => exec("justifyLeft")} title="Esquerda" testid="sig-left"><AlignLeft size={15} /></ToolBtn>
               <ToolBtn onClick={() => exec("justifyCenter")} title="Centro" testid="sig-center"><AlignCenter size={15} /></ToolBtn>
@@ -121,7 +141,7 @@ export function SignatureEditor({ value, onChange }) {
       <div>
         <div className="flex items-center gap-1.5 mb-3 text-sm font-medium"><Eye size={15} className="text-primary" /> Pré-visualização em tempo real</div>
         <div className="border border-border rounded-md p-4 bg-white min-h-[200px] overflow-auto" data-testid="signature-preview" dangerouslySetInnerHTML={{ __html: value || "" }} />
-        <p className="text-xs text-muted-foreground mt-2">Adicionada automaticamente ao fim de cada email desta conta. Use imagens externas (URL) para compatibilidade com Gmail, Outlook e Apple Mail.</p>
+        <p className="text-xs text-muted-foreground mt-2">Adicionada automaticamente ao fim de cada email desta conta. Carregue o logótipo diretamente (botão de imagem) — é alojado na plataforma e definido com largura fixa para chegar corretamente a Gmail, Outlook e Apple Mail.</p>
       </div>
     </div>
   );
