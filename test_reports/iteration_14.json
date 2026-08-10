@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 14 verification. Backend: new /app/backend/tests/test_iter14.py (9 cases: legacy template create with content_html + empty content_text, PUT with migrated plain text -> GET confirms content_text persisted and content_html=='', seed legacy templates intact, preview email_html=='' with {var} and {{var}} substitution, GET /api/settings + /api/public/branding company_name=='Smartize', /auth/me, bad-password login). All 9 pass. Full regression with '-n 0': 195 passed / 1 skipped (0 failures). Frontend (Playwright, carlos.miguel@smartize.pt): (1) HIGH bug FIXED for the empty-content_text case — a legacy template (content_html '<p>Ola {first_name}</p><p>Linha dois</p>', content_text '') opens in template-text-input already migrated as 'Ola {first_name}\\n\\nLinha dois'; Guardar + reopen keeps the body; GET shows content_text migrated and content_html ''. Preview renders 'Ola João\\n\\nLinha dois'. (2) a11y: ZERO 'Missing Description or aria-describedby for DialogContent' warnings for template-dialog and preview-dialog. (3) New plain-text template: subject/body variable insertion at cursor works ({{first_name}}, {{saudacao}}), preview substitutes sample data, save + delete work. (4) Configuracoes -> Geral shows 'Smartize' (no TEST_Smartize*); sidebar/header branding correct. (5) Modal footer buttons (Preview/Guardar) reachable at 768x620. (6) /contactos /grupos /campanhas /negocios /estatisticas: zero console errors. Test data created via UI/API was deleted; seeds 'QA Template 1/2' left untouched.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET/PUT /api/settings", "issue": "Environment pollution root cause found: backend_test.py TestSettings/TestIter3 overwrote company_name with 'TEST_Smartize'/'TEST_Smartize3' and logo_url with a 1x1 png and never restored them — that is why iteration 13 saw 'TEST_Smartize3'. Fixed inside the test files (snapshot + restore in finally) and DB values reset (company_name='Smartize', logo_url='' so the default /smartize-logo.webp is used)."},
+      {"endpoint": "worker.py plain-text path / preview signature", "issue": "Still open from iteration 13: plain-text sends have no open-pixel/click rewrite (opens/clicks always 0) and the default SMTP account signature is image-only HTML so nothing is appended in text mode while the preview footnote promises a signature."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Templates.jsx openEdit()", "issue": "Migration fallback only triggers when content_text is completely empty. For seeded legacy 'QA Template 1' (content_text='Ola', content_html='<p>Ola {first_name} 1</p>') the textarea opens with only 'Ola' — the review request expected 'Ola {first_name} 1'. Saving would still discard the richer HTML body. Suggest using the longer of content_text vs htmlToPlain(content_html) (e.g. prefer html text when htmlToPlain(content_html).length > content_text.length).", "selector": "[data-testid=\"template-text-input\"]", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Templates -> Pre-visualizacao do email", "issues": ["Footnote still claims the default account signature is appended, but the image-only signature produces no text — footnote can mislead (carry-over from iteration 13)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter14.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/iter14.xml",
+    "/app/test_reports/pytest/iter14_all.xml"
+  ],
+  "action_items": [
+    "Extend the openEdit fallback to also prefer the HTML-derived text when content_text is a short stub (legacy 'QA Template 1/2' still lose '{first_name} 1' on save).",
+    "Optional carry-overs: plain-text signature fallback and plain-text tracking (opens/clicks always 0)."
+  ],
+  "critical_code_review_comments": [
+    "Templates.jsx htmlToPlain() is a reasonable client-side converter (br/p/div -> newlines, textContent), but the same conversion already exists server-side (html_to_text); consider exposing/using one implementation to avoid divergence.",
+    "openEdit condition `(t.content_text || '').trim() ? t.content_text : htmlToPlain(...)` is a partial fix — any non-empty stub blocks migration.",
+    "DialogDescription added to both template-dialog and preview-dialog; Radix a11y warning confirmed gone.",
+    "Tests must never leave TEST_ branding in shared settings — restored via try/finally now."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter14.py", "/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "100% (9/9 new; 195 passed / 1 skipped full suite)", "frontend": "95% (all flows pass; legacy stub-text case still not migrated)"},
+  "seed_data_creation": "Created via API 'TEST_Legacy iter14' (legacy html, empty text) and via UI 'TEST_New iter14' — both deleted. Settings company_name reset to 'Smartize' and logo_url cleared (leftover 1x1 test png removed).",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "carlos.miguel@smartize.pt / 100%Smartize",
+  "context_for_next_testing_agent": "Run pytest with '-n 0'. Settings-mutating tests now restore original values — keep that pattern. Seeds 'QA Template 1/2' still hold legacy content_html with content_text='Ola' (use to retest the stub-text migration gap). Routes: /contactos /grupos /templates /campanhas /negocios /estatisticas /configuracoes.",
+  "rca_of_the_issue": "HIGH bug fixed: openEdit now migrates content_html -> plain text when content_text is empty, verified end-to-end (editor prefilled, save persists, content_html cleared). Remaining gap: the guard uses truthiness of content_text, so legacy templates with a short non-empty content_text still show the stub and lose the HTML body on save. Previous 'TEST_Smartize3' branding was caused by non-restoring settings tests, now fixed."
+}

@@ -13,7 +13,7 @@ from fastapi.responses import Response, RedirectResponse
 
 from core import db, now_utc, encrypt_secret
 from auth import get_current_user
-from email_service import build_variable_map, substitute, test_smtp_connection, send_email, compose_email_html
+from email_service import build_variable_map, substitute, test_smtp_connection, send_email, compose_email_html, html_has_visible_content, html_to_text
 from worker import build_campaign_jobs, build_enrollments
 from models import (
     ContactCreate, ContactUpdate, GroupCreate, GroupUpdate,
@@ -384,12 +384,20 @@ async def preview_template(body: dict, user=Depends(get_current_user)):
         smtp = await db.smtp_accounts.find_one({"is_default": True}) or await db.smtp_accounts.find_one({})
         sig = (smtp or {}).get("signature_html", "") if smtp else ""
     sig = substitute(sig or "", variables)
-    inner = content_html or (content_text.replace("\n", "<br/>") if content_text else "")
-    email_html = compose_email_html(inner, sig)
+    if html_has_visible_content(content_html):
+        # HTML template → preview the natural (non-boxed) HTML that will be sent.
+        email_html = compose_email_html(content_html, sig)
+        text_preview = content_text
+    else:
+        # Plain-text template → preview shows the exact plain text, incl. signature as it is appended on send.
+        email_html = ""
+        text_preview = content_text
+        if sig:
+            text_preview = (content_text + "\n\n" + html_to_text(sig)).strip()
     return {
         "subject": substitute(body.get("subject", ""), variables),
         "content_html": content_html,
-        "content_text": content_text,
+        "content_text": text_preview,
         "email_html": email_html,
     }
 

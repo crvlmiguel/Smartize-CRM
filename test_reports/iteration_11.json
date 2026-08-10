@@ -1,0 +1,25 @@
+{
+  "summary": "Frontend-only verification of the Templates editor responsive/height fix. Measured template-dialog geometry at viewport heights 768, 700, 600 and extra 500 (both 'Editar' and 'Novo template' entry points). In every case the dialog top >= 0, dialog height <= viewport, and all three footer buttons (Preview, Cancelar, Guardar) are fully inside the viewport, visible and enabled. Content area (2nd child of template-dialog) has computed overflow-y:auto and scrollHeight > clientHeight at low heights, so scrolling is internal only (document scrollTop stayed 0) while header/footer remain fixed. Functionality regression check passed: insert variable, plain-text (details) section, Preview dialog, create-save, edit-save and delete all work with normal (non-forced) clicks. Zero console errors.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "template-dialog / preview-dialog / other dialogs", "issues": ["Pre-existing Radix a11y console WARNING (not error): 'Missing `Description` or `aria-describedby={undefined}` for DialogContent' — still present, non-blocking"]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Templates.jsx template-dialog uses 'max-h-[90vh] grid-rows-[auto_1fr_auto] overflow-hidden' + content 'min-h-0 overflow-y-auto' + footer 'shrink-0 border-t' — correct pattern; measured heights are exactly 0.9*vh (768->691, 700->630, 600->540, 500->450).",
+    "Optional: same grid-rows/max-h pattern could be applied to preview-dialog for consistency; it currently fits at 600px (536px tall) thanks to max-h-[60vh] on the iframe wrapper, but the iframe has a fixed 560px height so on <520px viewports the preview dialog could still overflow (not part of this request)."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "not tested (skipped per request)", "frontend": "100% (4/4 viewport heights + functional regression)" },
+  "seed_data_creation": "Created template 'TESTQA Resp 700' (renamed to 'TESTQA Resp 700 edit') to validate save/edit, then deleted it. No residual test data. Seed 'QA Template 1/2' untouched.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "carlos.miguel@smartize.pt / 100%Smartize",
+  "context_for_next_testing_agent": "Measurement recipe used: after set_viewport_size + open dialog, evaluate on document.querySelector('[data-testid=\"template-dialog\"]'); children[1] is the scrollable content area; footer buttons: preview-template-button / text 'Cancelar' / save-template-button. Results: h=768 dialog 691px save.bottom 704; h=700 dialog 630 save.bottom 640; h=600 dialog 540 save.bottom 545; h=500 dialog 450 save.bottom 450 — all inside viewport, content scrollable each time. Expanding the 'Versão texto simples' details grows content (scrollHeight 663->815) without pushing the footer out. Preview dialog at h=600 fits (top 32, bottom 568).",
+  "rca_of_the_issue": "N/A — the reported responsiveness bug is fixed and verified; modal is capped at 90vh with grid-rows-[auto_1fr_auto] so only the middle row scrolls."
+}

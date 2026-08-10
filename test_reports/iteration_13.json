@@ -1,0 +1,46 @@
+{
+  "summary": "Iteration 13: validated the 'Templates = Plain Text only' simplification. Backend: new /app/backend/tests/test_iter13.py (22 cases) — html_has_visible_content unit (empty editor markup <br>/<p><br></p>/&nbsp; now correctly = not visible), send_email MIME unit (empty html_body => a SINGLE text/plain part, no text/html and no HTML markup in the raw message), /api/templates/preview (email_html == '', {first_name}/{company}/{saudacao} substituted in subject+body, both {var} and {{var}} syntaxes, signature appended as text), template persistence (create => content_html '', update of a legacy HTML template clears content_html, delete removes), campaign start with a plain-text template (recipients=1, status 'sending'), worker branching source guard. ALL 22 PASS. Full regression suite (-n 0): 186 passed / 1 skipped. Frontend (Playwright, logged in as carlos.miguel@smartize.pt): Templates modal now contains ONLY name, subject + Variável dropdown, plain Textarea + 'Inserir variável', and footer Preview/Cancelar/Guardar — no contenteditable/rich text, no iframe, no HTML tab, 0 formatting buttons. Variable insertion at cursor works for subject ({{first_name}}) and body ({{saudacao}}{{first_name}}). Preview shows plain <pre> text with variables replaced ('Caro Caro João,', 'Smartize'), subject 'Ola João', text/plain note, no grey HTML card/iframe. Save persisted (verified via GET /api/templates: content_html == ''), delete works. Modal footer buttons remain reachable at 768x620. All other pages (/contactos /grupos /campanhas /negocios /estatisticas /configuracoes) load with zero console errors.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "worker.py plain-text path + GET /api/campaigns/{id} stats", "issue": "When the template is plain text (full_html == ''), no open pixel and no click-tracking rewrite is injected (text_body is sent as-is). Consequence: opens/clicks will always be 0 for every plain-text campaign, so Estatísticas/CampaignDetail rates become permanently 0%. Expected trade-off of text/plain, but the UI should state it (or at least rewrite links in the text body for click tracking)."},
+      {"endpoint": "worker.py / POST /api/templates/preview (signature)", "issue": "The default account signature is image-only HTML (<img ...>). html_to_text() of it returns '', so plain-text emails and the preview end up with NO signature at all, while the UI footnote says 'inclui a assinatura da conta predefinida no fim'. Recommend a plain-text signature field per SMTP account (or an alt/text fallback)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Templates.jsx openEdit()", "issue": "DATA LOSS on legacy templates: openEdit sets content_text: t.content_text and drops content_html entirely. For a legacy template ('QA Template 1', content_html '<p>Ola {first_name} 1</p>', content_text 'Ola') the editor loads only 'Ola'; pressing Guardar permanently deletes the HTML body. Fallback should be content_text || html_to_text(content_html) so the old content is migrated into the plain-text box.", "selector": "[data-testid=\"template-text-input\"]", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Templates → Pré-visualização do email", "issues": ["Footnote 'inclui a assinatura da conta predefinida no fim' is shown even when no textual signature is rendered (image-only signature => nothing appended)."]},
+      {"screen": "Templates modal (a11y)", "issues": ["React warning: 'Missing Description or aria-describedby for DialogContent' for template-dialog and preview-dialog — add DialogDescription."]},
+      {"screen": "Configurações → Geral", "issues": ["Company name is left as 'TEST_Smartize3' from a previous automated run (leftover test data in the seeded environment)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter13.py",
+    "/app/test_reports/pytest/iter13.xml",
+    "/app/test_reports/pytest/iter13_all.xml"
+  ],
+  "action_items": [
+    "Templates.jsx openEdit: fall back to a text version of content_html when content_text is empty/shorter, so editing a legacy HTML template does not silently discard its body on save.",
+    "Decide on plain-text tracking: either accept 0 opens/clicks for plain-text campaigns and say so in the UI, or rewrite links inside text_body for click tracking.",
+    "Add a plain-text signature (or alt-text fallback) for accounts whose signature_html is image-only, otherwise plain-text emails go out unsigned despite the UI footnote.",
+    "Add DialogDescription to template-dialog and preview-dialog to clear the Radix a11y warning."
+  ],
+  "critical_code_review_comments": [
+    "html_has_visible_content correctly centralises the HTML-vs-text decision and is now used in api.py preview + both worker paths — the iteration-12 gap is fixed (test_iter12_edge.py now passes).",
+    "send_email attaches text/html only when html_body is non-empty, so plain-text sends are a genuine single-part text/plain message (verified by MIME unit test).",
+    "Templates.jsx is 193 lines, no rich-text code left; content_html is hard-coded to '' in both save() and doPreview() — consistent with the requirement.",
+    "Backend still stores/serves content_html for legacy templates and the worker still supports the HTML branch. That is fine for backwards compatibility, but there is no migration: legacy HTML templates cannot be viewed anywhere in the UI anymore."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter13.py"],
+  "success_rate": {"backend": "100% (22/22 new; 186 passed / 1 skipped full suite)", "frontend": "95% (all plain-text editor/preview/save/delete flows pass; legacy-template edit loses HTML body)"},
+  "seed_data_creation": "pytest created and deleted TEST_iter13_* templates/groups/contacts/campaigns and qa_iter13_*@example.com contact. UI-created template 'QA Plain iter13' was created and then deleted through the UI (verified gone).",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "carlos.miguel@smartize.pt / 100%Smartize",
+  "context_for_next_testing_agent": "Run pytest with '-n 0' (xdist loadscope in pytest.ini makes older shared-state files flake). App routes are Portuguese: /contactos /grupos /templates /campanhas /negocios /estatisticas /configuracoes. UI inserts {{var}} tokens; backend substitute() accepts both {var} and {{var}}. Templates seeded: 'QA Template 1/2' still hold legacy content_html — useful to retest the openEdit fallback fix. Default SMTP account 'QA SMTP' has an image-only signature_html.",
+  "rca_of_the_issue": "Legacy-template data loss: Templates.openEdit() builds the form with content_html: '' and content_text: t.content_text only. Templates created before the plain-text simplification keep their body in content_html, so the textarea opens (nearly) empty and save() writes content_html: '' — the original body is unrecoverable. Fix in the frontend openEdit (or a one-off backend migration converting content_html -> content_text)."
+}

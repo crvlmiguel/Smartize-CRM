@@ -59,6 +59,15 @@ def html_to_text(html: str) -> str:
     return text.strip()
 
 
+def html_has_visible_content(html: str) -> bool:
+    """True if the HTML carries real content (text or an image), not just empty editor markup like <br>/<p></p>/&nbsp;."""
+    if not html:
+        return False
+    if re.search(r"<img\b", html, flags=re.I):
+        return True
+    return bool(html_to_text(html).replace("\xa0", " ").strip())
+
+
 def rewrite_links(html: str, base_url: str, tracking_id: str) -> str:
     if not html:
         return ""
@@ -103,32 +112,25 @@ def _ensure_img_email_safe(html: str) -> str:
 
 
 def wrap_email_html(inner_html: str) -> str:
-    """Wrap content in an email-safe, table-based, 600px responsive container with inline styles."""
+    """Wrap content as a natural, plain-looking email — no container box, background or borders."""
     return (
         '<!DOCTYPE html><html lang="pt"><head>'
         '<meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
         '<meta http-equiv="Content-Type" content="text/html; charset=utf-8"></head>'
-        '<body style="margin:0;padding:0;background-color:#f4f4f5;-webkit-text-size-adjust:100%;">'
-        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f4f5;">'
-        '<tr><td align="center" style="padding:24px 12px;">'
-        '<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" '
-        'style="width:600px;max-width:600px;background-color:#ffffff;border-radius:8px;border:1px solid #e4e4e7;">'
-        f'<tr><td style="padding:28px 32px;font-family:{EMAIL_FONT};font-size:15px;line-height:1.6;color:#0a0a0a;word-break:break-word;">'
+        '<body style="margin:0;padding:0;">'
+        f'<div style="font-family:{EMAIL_FONT};font-size:15px;line-height:1.6;color:#000000;word-break:break-word;">'
         f'{inner_html}'
-        '</td></tr></table>'
-        '</td></tr></table></body></html>'
+        '</div>'
+        '</body></html>'
     )
 
 
 def compose_email_html(content_html: str, signature_html: str = "") -> str:
-    """Assemble the final, email-client-safe HTML document (content + signature)."""
+    """Assemble the final email HTML (content + signature) with a natural, non-boxed look."""
     inner = _ensure_img_email_safe(content_html or "")
     if signature_html:
-        inner += (
-            '<div style="margin-top:24px;padding-top:16px;border-top:1px solid #e4e4e7;">'
-            f'{_ensure_img_email_safe(signature_html)}</div>'
-        )
+        inner += '<br><br>' + _ensure_img_email_safe(signature_html)
     return wrap_email_html(inner)
 
 

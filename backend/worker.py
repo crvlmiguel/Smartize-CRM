@@ -10,7 +10,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from core import db, now_utc
 from email_service import (
     build_variable_map, substitute, rewrite_links, inject_open_pixel, send_email, html_to_text,
-    compose_email_html,
+    compose_email_html, html_has_visible_content,
 )
 
 logger = logging.getLogger("worker")
@@ -153,15 +153,18 @@ async def _send_job(campaign: dict, job: dict, smtp: dict):
     if not signature_html and smtp.get("signature"):
         signature_html = smtp.get("signature").replace("\n", "<br/>")
     signature_html = substitute(signature_html, variables) if signature_html else ""
-    if not html_body and text_body:
-        html_body = text_body.replace("\n", "<br/>")
     if signature_html:
         text_body = (text_body or "") + "\n\n" + html_to_text(signature_html)
 
     tracking_id = job["tracking_id"]
-    full_html = compose_email_html(html_body, signature_html)
-    full_html = rewrite_links(full_html, BASE_URL, tracking_id)
-    full_html = inject_open_pixel(full_html, BASE_URL, tracking_id)
+    if html_has_visible_content(html_body):
+        # HTML template: send a natural (non-boxed) HTML email with open/click tracking.
+        full_html = compose_email_html(html_body, signature_html)
+        full_html = rewrite_links(full_html, BASE_URL, tracking_id)
+        full_html = inject_open_pixel(full_html, BASE_URL, tracking_id)
+    else:
+        # Plain-text-only template: send as real plain text, without any HTML wrapper.
+        full_html = ""
 
     await db.email_jobs.update_one({"_id": job["_id"]}, {"$set": {"status": "sending"}})
     try:
@@ -290,15 +293,16 @@ async def _send_sequence_step(campaign, enr, contact, smtp, steps, idx):
     html_body = substitute(template.get("content_html", ""), variables)
     sig = smtp.get("signature_html") or (smtp.get("signature") or "").replace("\n", "<br/>")
     sig = substitute(sig, variables) if sig else ""
-    if not html_body and text_body:
-        html_body = text_body.replace("\n", "<br/>")
     if sig:
         text_body = (text_body or "") + "\n\n" + html_to_text(sig)
 
     tracking_id = str(ObjectId())
-    full_html = compose_email_html(html_body, sig)
-    full_html = rewrite_links(full_html, BASE_URL, tracking_id)
-    full_html = inject_open_pixel(full_html, BASE_URL, tracking_id)
+    if html_has_visible_content(html_body):
+        full_html = compose_email_html(html_body, sig)
+        full_html = rewrite_links(full_html, BASE_URL, tracking_id)
+        full_html = inject_open_pixel(full_html, BASE_URL, tracking_id)
+    else:
+        full_html = ""
 
     job_doc = {
         "campaign_id": str(campaign["_id"]), "contact_id": str(contact["_id"]),

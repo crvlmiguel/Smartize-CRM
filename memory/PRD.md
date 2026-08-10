@@ -40,7 +40,15 @@ Fluxo: SMTP → Contactos → Grupos → Template → Campanha → Enviar/Agenda
 - **P2**: Campos personalizados na UI de contactos; slugs ASCII nos nav-testids.
 - **P3 (futuro)**: IA, SMS/WhatsApp.
 
-## Iteração 8-10 — Emails email-safe, upload de logótipo, importação com mapeamento, campo Saudação (2026-08-10)
+## Iteração 11-14 — Editor responsivo, email natural, Templates só Plain Text (2026-08-10)
+- **Editor de templates responsivo**: modal com grid `auto/1fr/auto` + `max-h-[90vh]`, scroll interno só no conteúdo, botões (Preview/Cancelar/Guardar) sempre acessíveis (testado 768/700/600px). (iter11 100%)
+- **Email com aspeto natural**: `wrap_email_html` deixou de criar caixa/cartão (sem tabela container, fundo cinzento ou borda); assinatura separada por espaçamento. (iter12)
+- **Templates = apenas Plain Text**: removido editor visual/HTML; editor agora é Nome + Assunto + Textarea de texto simples + Inserir variável ({{var}}) + Preview + Guardar. Envio efetivo em `text/plain` (sem HTML) quando não há conteúdo HTML visível (`html_has_visible_content`). Variáveis {{first_name}}/{{company}}/{{saudacao}} funcionam. (iter13 backend 100%)
+- **Migração de templates legados**: `openEdit` converte `content_html`→texto (prefere o texto mais rico) para não perder o corpo ao guardar; ao guardar, `content_html` fica sempre "". (iter14 HIGH corrigido)
+- **a11y + branding**: DialogDescription nos diálogos de template/preview; nome da empresa reposto para "Smartize" (dados de teste antigos limpos).
+- **Trade-offs conhecidos (backlog)**: emails plain text não têm tracking de abertura/cliques (inerente a text/plain); assinaturas só-imagem não aparecem em modo texto → falta um campo de assinatura em texto por conta SMTP.
+
+
 - **Assinatura/logótipo**: upload direto de imagem (POST /api/uploads/image, servida em /api/public/image/{id}), inserção email-safe com largura fixa + `max-width:100%`; removido placeholder externo via.placeholder.com.
 - **HTML email-safe**: `compose_email_html`/`wrap_email_html` (container de tabela 600px, CSS inline) aplicado no envio (worker) e test-send; `_ensure_img_email_safe` normaliza `<img>` (remove border-* injetado, adiciona border:0/max-width/height:auto). Plain Text intacto.
 - **Preview realista**: /api/templates/preview devolve `email_html` (documento final); Templates mostra iframe com toggle Desktop 640px / Mobile 380px.

@@ -154,8 +154,10 @@ class TestTemplatePreview:
         assert "João" in d["content_html"] and "Smartize" in d["content_html"]
         html = d["email_html"]
         assert html.lower().startswith("<!doctype html>")
-        assert "<table" in html and 'width="600"' in html
-        assert "max-width:600px" in html
+        # iter12: natural email — no container table/card
+        assert "<table" not in html.lower() and 'width="600"' not in html
+        assert "max-width:600px" not in html
+        assert "background-color" not in html.lower()
         # signature integrated + img made email safe
         assert "Cumprimentos" in html
         img = re.search(r"<img[^>]*y\.png[^>]*>", html)
@@ -181,7 +183,9 @@ class TestTemplatePreview:
         r = client.post(f"{BASE}/templates/preview",
                         json={"subject": "s", "content_text": "linha1\nlinha2"}, timeout=30)
         assert r.status_code == 200
-        assert "linha1<br/>linha2" in r.json()["email_html"]
+        # iter12: text-only template previews/sends as real plain text (no HTML wrapper)
+        assert r.json()["email_html"] == ""
+        assert r.json()["content_text"] == "linha1\nlinha2"
 
     def test_preview_requires_auth(self):
         r = requests.post(f"{BASE}/templates/preview", json={"subject": "x"}, timeout=30)
@@ -331,6 +335,7 @@ class TestSendPipeline:
         sys.path.insert(0, "/app/backend")
         from email_service import compose_email_html
         html = compose_email_html('<p>x</p><img src="a.png" width="200">', "<p>sig</p>")
-        assert 'width="600"' in html and "<!DOCTYPE html>" in html
+        # iter12: no 600px container wrapper anymore
+        assert 'width="600"' not in html and "<!DOCTYPE html>" in html
         assert "max-width:100%" in html and "sig" in html
         assert html.count("<!DOCTYPE html>") == 1

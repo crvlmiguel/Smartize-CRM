@@ -1,0 +1,46 @@
+{
+  "summary": "Iteration 12: validated the 'natural email' fix (no container box) and real Plain Text sending. Backend: 10 new pytest cases (unit compose_email_html/wrap_email_html + /api/templates/preview HTML & text-only + campaign start pipeline) all pass; full regression suite 159 passed / 1 skipped (sequential run). Frontend: Templates preview verified via Playwright — HTML template renders as plain natural HTML inside the iframe (no <table>, no background-color, no border-radius, no 600px card), variables substituted, imgs email-safe, Desktop/Mobile toggle works; plain-text-only template renders as simple <pre> text. Tracking regression verified (click rewrite + open pixel still injected in the natural HTML). ONE real gap found: 'visually empty' HTML from the rich text editor (e.g. '<br>', '<p><br></p>', '<p>&nbsp;</p>') is treated as HTML, so a user who clears the editor to send Plain Text still gets an HTML email.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/templates/preview (and worker.py _send_job / _send_sequence_step)", "issue": "Emptiness check uses content_html.strip(). The rich text editor leaves markup like '<br>', '<p><br></p>', '<div><br></div>', '<p>&nbsp;</p>' when the user deletes all content, so the template is still sent/previewed as HTML (with the wrapper + signature) instead of real Plain Text. Repro: 5/5 params fail in /app/backend/tests/test_iter12_edge.py. Suggested fix: strip tags/&nbsp; (e.g. html_to_text(content_html).strip() and no <img>) before deciding HTML vs plain text, applied in api.py preview and both worker paths."},
+      {"endpoint": "POST /api/templates/preview", "issue": "For plain-text templates the account signature is NOT appended to content_text, but the UI footnote says the preview includes the default account signature. At send time worker appends html_to_text(signature) to text_body, so preview and real email differ."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Templates → Pré-visualização do email", "issues": ["The preview iframe uses background '#f4f4f5' (grey) while the email itself has no background; since the goal is 'fundo do cliente', a white iframe background would represent the delivered email more faithfully.", "Footnote text 'inclui a assinatura da conta predefinida' is inaccurate for plain-text templates (no signature shown)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter12.py",
+    "/app/backend/tests/test_iter12_edge.py",
+    "/app/test_reports/pytest/iter12.xml",
+    "/app/test_reports/pytest/iter12_all.xml"
+  ],
+  "action_items": [
+    "Treat visually-empty HTML (only <br>/<p></p>/&nbsp;, no text and no <img>) as no HTML in api.py /templates/preview and in worker.py _send_job and _send_sequence_step, so Plain Text templates are really sent as plain text after the editor is cleared.",
+    "Either append the signature to content_text in the plain-text preview or adjust the footnote wording in Templates.jsx.",
+    "Optional: make the preview iframe background white to match a real mail client."
+  ],
+  "critical_code_review_comments": [
+    "email_service.wrap_email_html/compose_email_html are correct: only a <div> with font-family/font-size/line-height/color, signature separated by <br><br>, no table/background/border/border-radius/max-width card.",
+    "HTML-vs-text branching logic is duplicated in three places (api.py preview, worker._send_job, worker._send_sequence_step). Extract a single helper (e.g. build_email_bodies()) to avoid divergence — this is exactly why the empty-editor case would need three fixes.",
+    "rewrite_links uses email.utils.quote for the tracked URL, which does not percent-encode ':' '/' '&' — query params of the original link can break the tracking redirect (pre-existing)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter12.py",
+    "/app/backend/tests/test_iter12_edge.py",
+    "/app/backend/tests/test_iter8.py",
+    "/app/backend/tests/test_iter9.py"
+  ],
+  "success_rate": {"backend": "100% (159 passed / 1 skipped) on the main suite; 0% on the 5 new intentional edge-case assertions in test_iter12_edge.py", "frontend": "100% of tested flows (HTML preview natural, plain-text preview, desktop/mobile toggle)"},
+  "seed_data_creation": "Temporary groups/contacts/templates/campaigns prefixed TEST_iter12_* and qa_iter12_* created by pytest and deleted in teardown. UI templates were only previewed, never saved.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "carlos.miguel@smartize.pt / 100%Smartize",
+  "context_for_next_testing_agent": "Stale assertions in test_iter8.py (TestTemplatePreview.test_preview_returns_email_safe_html, test_preview_uses_text_when_no_html, TestSendPipeline.test_compose_email_html_unit) and test_iter9.py (test_content_text_variable_and_plain_text_intact) were updated to the new no-container / empty email_html behaviour. IMPORTANT: run pytest with '-n 0'; the pre-configured xdist loadscope parallelism makes older files (backend_test.py, test_iter4/6) fail with KeyError 'id' because they share class-level state across classes — those are test-harness artifacts, not app bugs. test_iter12_edge.py is an intentionally failing spec for the visually-empty-HTML gap; it should pass after the fix.",
+  "rca_of_the_issue": "api.py and worker.py decide plain-text vs HTML with `content_html.strip()`. A contenteditable editor never returns '' after the user deletes the content — it returns '<br>' or '<p><br></p>'. So the branch takes the HTML path, wraps the (empty) body plus the signature and sends an HTML email, defeating the 'send EFETIVAMENTE as Plain Text' requirement. Fix: compare the text content of the HTML (tags stripped, &nbsp; removed) and also allow HTML when an <img> is present."
+}

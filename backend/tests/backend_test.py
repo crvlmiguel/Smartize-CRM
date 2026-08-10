@@ -314,10 +314,17 @@ class TestSettings:
         data = r.json()
         # default_signature must not exist in settings anymore
         assert "default_signature" not in data
-        r2 = client.put(f"{BASE_URL}/api/settings", json={"company_name": "TEST_Smartize", "timezone": "Europe/Lisbon"})
-        assert r2.status_code == 200
-        assert r2.json()["company_name"] == "TEST_Smartize"
-        assert "default_signature" not in r2.json()
+        try:
+            r2 = client.put(f"{BASE_URL}/api/settings", json={"company_name": "TEST_Smartize", "timezone": "Europe/Lisbon"})
+            assert r2.status_code == 200
+            assert r2.json()["company_name"] == "TEST_Smartize"
+            assert "default_signature" not in r2.json()
+        finally:
+            # restore so the test run does not leave TEST_ branding behind
+            client.put(f"{BASE_URL}/api/settings", json={
+                "company_name": data.get("company_name", "Smartize"),
+                "timezone": data.get("timezone", "Europe/Lisbon"),
+            })
 
     def test_settings_reject_default_signature(self, client):
         # SettingsUpdate should silently ignore unknown fields OR reject. Either way, must not persist default_signature.
@@ -340,14 +347,22 @@ class TestIter3:
         assert isinstance(d["logo_url"], str) and isinstance(d["company_name"], str)
 
     def test_settings_save_logo_base64_and_branding_reflects(self, client):
+        # snapshot original settings so this test does not pollute the environment
+        original = client.get(f"{BASE_URL}/api/settings").json()
         tiny = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII="
-        r = client.put(f"{BASE_URL}/api/settings", json={"logo_url": tiny, "company_name": "TEST_Smartize3"})
-        assert r.status_code == 200
-        assert r.json().get("logo_url") == tiny
-        # public branding must expose it without auth
-        pb = requests.get(f"{BASE_URL}/api/public/branding", timeout=30).json()
-        assert pb["logo_url"] == tiny
-        assert pb["company_name"] == "TEST_Smartize3"
+        try:
+            r = client.put(f"{BASE_URL}/api/settings", json={"logo_url": tiny, "company_name": "TEST_Smartize3"})
+            assert r.status_code == 200
+            assert r.json().get("logo_url") == tiny
+            # public branding must expose it without auth
+            pb = requests.get(f"{BASE_URL}/api/public/branding", timeout=30).json()
+            assert pb["logo_url"] == tiny
+            assert pb["company_name"] == "TEST_Smartize3"
+        finally:
+            client.put(f"{BASE_URL}/api/settings", json={
+                "logo_url": original.get("logo_url", ""),
+                "company_name": original.get("company_name", "Smartize"),
+            })
 
     def test_create_google_account_defaults(self, client):
         # first, delete any TEST_ smtp so is_default assignment tests reliably
