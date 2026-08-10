@@ -116,7 +116,7 @@ class TestSendEmailMime:
 
 # ---------- API: preview is plain text ----------
 class TestPreviewPlainText:
-    def test_preview_empty_email_html_and_substitution(self, client):
+    def test_preview_html_alternative_and_substitution(self, client):
         r = client.post(f"{BASE_URL}/templates/preview", json={
             "subject": "Ola {first_name} da {company}",
             "content_html": "",
@@ -124,7 +124,7 @@ class TestPreviewPlainText:
         }, timeout=30)
         assert r.status_code == 200, r.text
         d = r.json()
-        assert d["email_html"] == "", d["email_html"][:200]
+        assert d["email_html"].startswith("<!DOCTYPE html>")  # iter16: HTML part always sent
         assert d["subject"] == "Ola João da Smartize", d["subject"]
         body = d["content_text"]
         assert body.startswith("Caro Caro João,"), body
@@ -143,7 +143,7 @@ class TestPreviewPlainText:
         d = r.json()
         assert d["subject"] == "Ola João", d["subject"]
         assert d["content_text"].startswith("Caro Caro João da Smartize"), d["content_text"]
-        assert d["email_html"] == ""
+        assert "Caro Caro João da Smartize" in d["email_html"]
 
     def test_preview_includes_signature_as_text(self, client):
         r = client.post(f"{BASE_URL}/templates/preview", json={
@@ -152,7 +152,7 @@ class TestPreviewPlainText:
         }, timeout=30)
         assert r.status_code == 200, r.text
         d = r.json()
-        assert d["email_html"] == ""
+        assert "Carlos Miguel" in d["email_html"] and "<br>" in d["email_html"]
         assert "Carlos Miguel" in d["content_text"]
         assert "<" not in d["content_text"], d["content_text"]
 
@@ -256,24 +256,24 @@ class TestWorkerBranching:
         assert src.count("html_has_visible_content(") >= 2, "both send paths must use html_has_visible_content"
         assert "content_html" in src
         # plain-text branch must produce an empty html body
-        assert re.search(r"else:\s*\n\s*#[^\n]*\n\s*full_html = \"\"", src), "plain-text branch missing"
+        # iter16: plain-text bodies are converted to natural HTML instead of skipping the HTML part
+        assert src.count("text_to_html(") >= 2, "plain-text branch must build HTML via text_to_html"
 
-    def test_worker_plain_text_produces_empty_full_html(self):
-        from email_service import html_has_visible_content, compose_email_html
-        html_body = ""
-        full_html = compose_email_html(html_body, "<p>sig</p>") if html_has_visible_content(html_body) else ""
-        assert full_html == ""
-        html_body = "<p><br></p>"
-        full_html = compose_email_html(html_body, "<p>sig</p>") if html_has_visible_content(html_body) else ""
-        assert full_html == ""
+    def test_worker_plain_text_produces_html_from_text(self):
+        from email_service import html_has_visible_content, compose_email_html, text_to_html
+        for html_body in ("", "<p><br></p>"):
+            body = html_body if html_has_visible_content(html_body) else text_to_html("linha1\nlinha2")
+            full_html = compose_email_html(body, "<p>sig</p>")
+            assert "linha1<br>" in full_html and "<p>sig</p>" in full_html
 
 
 # ---------- Frontend source guard: no rich text / HTML editor left ----------
 class TestTemplatesUISource:
     def test_no_rich_text_editor_in_templates_page(self):
         src = open("/app/frontend/src/pages/Templates.jsx", encoding="utf-8").read()
+        # iter16: an <iframe> is now used to render the read-only HTML preview (allowed)
         for banned in ["RichTextEditor", "contentEditable", "execCommand", "dangerouslySetInnerHTML",
-                       "iframe", "Tabs", "content-html-input"]:
+                       "Tabs", "content-html-input"]:
             assert banned not in src, f"{banned} still present in Templates.jsx"
         assert "template-text-input" in src
         assert 'content_html: ""' in src

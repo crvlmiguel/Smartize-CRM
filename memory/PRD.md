@@ -40,7 +40,14 @@ Fluxo: SMTP → Contactos → Grupos → Template → Campanha → Enviar/Agenda
 - **P2**: Campos personalizados na UI de contactos; slugs ASCII nos nav-testids.
 - **P3 (futuro)**: IA, SMS/WhatsApp.
 
-## Iteração 15 — Assinatura em texto simples (fix "assinatura colada") (2026-08-10)
+## Iteração 16 — Assinatura HTML enviada como HTML real (fix definitivo) (2026-08-10)
+- **Problema**: como os templates são texto simples, o email ia só como text/plain e a assinatura HTML era achatada em texto (colada).
+- **Fix**: os emails passam a ser SEMPRE `multipart/alternative` — parte `text/plain` (corpo + assinatura em texto, fallback) **e** parte `text/html` (corpo natural via `text_to_html` + **assinatura HTML preservada** por `compose_email_html`, sem `html_to_text` no caminho HTML). Novo `text_to_html` (escape + `<br>`). Worker (_send_job e _send_sequence_step) e `/api/templates/preview` alinhados; preview no frontend voltou a renderizar `email_html` num iframe.
+- **Verificação do MIME (requisito #8)**: inspecionado o objeto real — `multipart/alternative` com 2 partes; `text/html` mantém `<table>/<img> logo/<a> links/cores inline`; `text/plain` com assinatura uma info por linha e zero `<`.
+- **Testado**: iteração 16 100% (9 testes novos + 218 regressão; testes antigos que codificavam o comportamento anterior — email_html vazio — foram atualizados à nova spec, só código de teste).
+- **Notas cosméticas (backlog)**: altura fixa do iframe de preview deixa espaço branco em emails curtos; na assinatura guardada pelo utilizador o link do website envolve só 'www.smartize.' e o email não é link (vem do editor, não do envio — não alterado por indicação de não mexer no design).
+
+
 - **Bug**: em emails text/plain a assinatura chegava toda colada numa linha porque `html_to_text` só quebrava em `<br>`/`</p>`.
 - **Fix conversor**: `html_to_text` reescrito — trata `</p></div></tr></td></th></table></h1-6></li></ul></ol>` e `<br>` como quebras de linha, remove `<script>/<style>/<head>`, decodifica entidades e colapsa linhas vazias → cada informação (Nome/Cargo/Telefone/Email/Website) numa linha.
 - **Dois formatos de assinatura**: novo campo `signature_text` por conta SMTP (models + endpoints). Envio: HTML usa `signature_html`; text/plain usa `signature_text` (própria) ou, se vazia, gera limpa a partir do HTML. UI: campo "Assinatura em texto simples" + botão "Gerar a partir do HTML" (`htmlToPlainSig` espelha o backend).

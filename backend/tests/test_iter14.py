@@ -97,7 +97,7 @@ class TestPreview:
             "content_text": "Caro {{saudacao}} {{first_name}}, da {{company}}."})
         assert r.status_code == 200, r.text
         d = r.json()
-        assert d["email_html"] == ""
+        assert "Caro Caro João, da Smartize.<br>" in d["email_html"]  # iter16
         assert d["subject"] == "Ola João"
         assert "{{" not in d["content_text"]
         assert "João" in d["content_text"]

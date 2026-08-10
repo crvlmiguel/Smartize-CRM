@@ -13,7 +13,7 @@ from fastapi.responses import Response, RedirectResponse
 
 from core import db, now_utc, encrypt_secret
 from auth import get_current_user
-from email_service import build_variable_map, substitute, test_smtp_connection, send_email, compose_email_html, html_has_visible_content, html_to_text
+from email_service import build_variable_map, substitute, test_smtp_connection, send_email, compose_email_html, html_has_visible_content, html_to_text, text_to_html
 from worker import build_campaign_jobs, build_enrollments
 from models import (
     ContactCreate, ContactUpdate, GroupCreate, GroupUpdate,
@@ -386,18 +386,13 @@ async def preview_template(body: dict, user=Depends(get_current_user)):
         sig = (smtp or {}).get("signature_html", "") if smtp else ""
         sig_text_override = (smtp or {}).get("signature_text", "") if smtp else ""
     sig = substitute(sig or "", variables)
-    if html_has_visible_content(content_html):
-        # HTML template → preview the natural (non-boxed) HTML that will be sent.
-        email_html = compose_email_html(content_html, sig)
-        text_preview = content_text
-    else:
-        # Plain-text template → preview the exact text incl. the clean text signature that is appended on send.
-        email_html = ""
-        text_preview = content_text
-        sig_text = (sig_text_override or "").strip()
-        sig_text = substitute(sig_text, variables) if sig_text else html_to_text(sig)
-        if sig_text:
-            text_preview = (content_text + "\n\n" + sig_text).strip()
+    # The received email is always HTML (natural body + real HTML signature). Preview mirrors that.
+    body_html = content_html if html_has_visible_content(content_html) else text_to_html(content_text)
+    email_html = compose_email_html(body_html, sig)
+    # Plain-text alternative (fallback) uses the account's text signature or a clean derived one.
+    sig_text = (sig_text_override or "").strip()
+    sig_text = substitute(sig_text, variables) if sig_text else html_to_text(sig)
+    text_preview = content_text + (("\n\n" + sig_text) if sig_text else "")
     return {
         "subject": substitute(body.get("subject", ""), variables),
         "content_html": content_html,

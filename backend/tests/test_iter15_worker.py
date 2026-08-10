@@ -82,7 +82,10 @@ def test_plain_text_uses_signature_text(env):
     cap, job = _invoke(env, env["tpl_text_id"], smtp)
     print("TEXT BODY:\n" + cap["text"])
     assert job["status"] == "sent"
-    assert cap["html"] == "", "plain-text template must not send HTML part"
+    # Iteration 16 change: an HTML alternative is now ALWAYS sent so the real HTML
+    # signature reaches the recipient; the text part below stays the plain fallback.
+    assert cap["html"], "an HTML alternative must be sent"
+    assert "<table" in cap["html"], "HTML part must keep the HTML signature structure"
     lines = [l for l in cap["text"].split("\n") if l.strip()]
     for expected in SIG_TEXT.split("\n"):
         assert expected in lines

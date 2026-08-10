@@ -34,7 +34,8 @@ def test_visually_empty_html_should_fall_back_to_plain_text(client, empty_html):
         "content_text": "Olá {first_name},\n\nAbraço",
     }, timeout=30)
     assert r.status_code == 200, r.text
-    assert r.json()["email_html"] == "", (
-        f"content_html={empty_html!r} has no visible text but still produced HTML email: "
-        f"{r.json()['email_html'][:200]}"
+    eh = r.json()["email_html"]
+    # iter16: visually-empty HTML falls back to the plain-text body converted to natural HTML
+    assert "Olá João,<br>" in eh, (
+        f"content_html={empty_html!r} should fall back to the plain-text body: {eh[:300]}"
     )

@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 16 validated the HTML-signature-as-real-HTML fix. Created /app/backend/tests/test_iter16.py (9 tests): (a) MIME composition — patched email_service.aiosmtplib.send to capture the real MIMEMultipart built by send_email: content type is multipart/alternative with EXACTLY two parts (text/plain + text/html); the text/html payload keeps <table>, <img src=logo>, <a href=mailto/https>, inline colors (#7c3aed/#2563eb) and is NOT text-flattened; the text/plain payload has the signature one info per line and zero '<' characters. (b) compose_email_html/text_to_html units: body escaped with <br>, no card background (#f4f4f5 absent), <img> gets max-width/height:auto/border:0 while keeping src+width. (c) worker._send_job (send_email patched) for a PLAIN-TEXT template now always emits an HTML part containing the untouched HTML signature + natural <br> body, variables substituted, click-tracking rewrite applied while mailto: untouched, open pixel injected, and a clean text/plain fallback (also when signature_text is empty -> derived via html_to_text). (d) /api/templates/preview: email_html always returned, preserves table/img/anchors/colors, substitutes {first_name}/{saudacao}/{company}, no box; content_text fallback carries the account signature lines with no HTML. Frontend: logged in with carlos.miguel@smartize.pt, /templates -> edit -> Preview renders preview-iframe with the natural body + HTML signature (Smartize logo image loaded from /api/public/image/..., role in purple, website link), each element on its own line, no card background, variables substituted. Full regression suite: 218 passed, 1 skipped, 0 failed. 16 pre-existing tests from iterations 8/9/12/13/14/15 asserted the now-superseded behaviour (email_html == \"\" for plain-text templates, worker 'full_html = \"\"' branch, iframe banned in Templates.jsx) and were updated to the new spec — test-code only, no application change.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Preview do template (preview-dialog)", "issues": ["O iframe tem altura fixa e sobra bastante espaço branco abaixo da assinatura em emails curtos (cosmético; poderia auto-ajustar à altura do conteúdo)"]},
+      {"screen": "Assinatura da conta seed", "issues": ["No HTML da assinatura guardada, o link do website só envolve 'www.smartize.' (o '.pt' fica fora do <a>) e o email não é link — vem do editor do utilizador, não do envio; não foi alterado por indicação de não mexer no design"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter16.py", "/app/test_reports/pytest/pytest_results_iter16.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "MIME verificado no objeto real: send_email usa MIMEMultipart('alternative') e anexa text/plain antes de text/html (ordem correta — clientes preferem a última parte, o HTML).",
+    "worker._send_job e _send_sequence_step usam a mesma lógica (body_html = content_html se visível senão text_to_html(body_text); compose_email_html(body_html, signature_html)); a assinatura HTML só passa por _ensure_img_email_safe (não há html_to_text no caminho HTML).",
+    "rewrite_links reescreve também os links da assinatura para tracking (comportamento esperado) e preserva mailto:.",
+    "Nota de manutenção: vários testes antigos codificavam o comportamento anterior (email_html vazio). Foram atualizados; futuras mudanças de spec devem atualizar test_iter12/13/14/15 em conjunto."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter16.py",
+    "/app/backend/tests/test_iter15_worker.py",
+    "/app/backend/tests/test_iter15.py",
+    "/app/backend/tests/test_iter14.py",
+    "/app/backend/tests/test_iter13.py",
+    "/app/backend/tests/test_iter12.py",
+    "/app/backend/tests/test_iter12_edge.py",
+    "/app/backend/tests/test_iter9.py",
+    "/app/backend/tests/test_iter8.py"
+  ],
+  "success_rate": {"backend": "100% (218 passed, 1 skipped)", "frontend": "100% dos fluxos testados"},
+  "seed_data_creation": "Contacto/template TEST_iter16 temporários criados nos testes do worker e removidos no teardown (verificado: 0 documentos TEST_ residuais em contacts/templates/campaigns/email_jobs). Nenhum template existente foi guardado na UI.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "carlos.miguel@smartize.pt / 100%Smartize",
+  "context_for_next_testing_agent": "Padrão reutilizável em /app/backend/tests/test_iter16.py: TestCompose::test_mime_has_two_parts_html_signature_intact faz patch a email_service.aiosmtplib.send para inspecionar o MIMEMultipart real (SMTP fictício não é usado); TestWorker faz patch a worker.send_email. Atenção: fixtures que criam um novo event loop quebram o Motor quando a suite corre inteira — reutilizar asyncio.get_event_loop(). Correr sempre com '-n 0'.",
+  "rca_of_the_issue": "O bug anterior vinha do worker enviar apenas text/plain para templates de texto simples, o que forçava a conversão da assinatura HTML para texto. Fix confirmado: o worker/preview compõem sempre HTML (text_to_html para o corpo + compose_email_html com a signature_html intacta) e send_email anexa as duas partes; a versão em texto é apenas fallback."
+}

@@ -183,9 +183,9 @@ class TestTemplatePreview:
         r = client.post(f"{BASE}/templates/preview",
                         json={"subject": "s", "content_text": "linha1\nlinha2"}, timeout=30)
         assert r.status_code == 200
-        # iter12: text-only template previews/sends as real plain text (no HTML wrapper)
-        assert r.json()["email_html"] == ""
-        assert r.json()["content_text"] == "linha1\nlinha2"
+        # iter16: text-only template also gets an HTML alternative (natural <br> body)
+        assert "linha1<br>" in r.json()["email_html"]
+        assert r.json()["content_text"].startswith("linha1\nlinha2")
 
     def test_preview_requires_auth(self):
         r = requests.post(f"{BASE}/templates/preview", json={"subject": "x"}, timeout=30)

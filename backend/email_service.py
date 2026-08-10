@@ -145,6 +145,14 @@ def wrap_email_html(inner_html: str) -> str:
     )
 
 
+def text_to_html(text: str) -> str:
+    """Convert a plain-text body into simple, natural HTML (escaped, newlines -> <br>)."""
+    if not text:
+        return ""
+    import html as _html
+    return _html.escape(text).replace("\n", "<br>\n")
+
+
 def compose_email_html(content_html: str, signature_html: str = "") -> str:
     """Assemble the final email HTML (content + signature) with a natural, non-boxed look."""
     inner = _ensure_img_email_safe(content_html or "")

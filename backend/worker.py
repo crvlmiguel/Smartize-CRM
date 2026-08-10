@@ -10,7 +10,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from core import db, now_utc
 from email_service import (
     build_variable_map, substitute, rewrite_links, inject_open_pixel, send_email, html_to_text,
-    compose_email_html, html_has_visible_content,
+    compose_email_html, html_has_visible_content, text_to_html,
 )
 
 logger = logging.getLogger("worker")
@@ -145,7 +145,7 @@ async def _send_job(campaign: dict, job: dict, smtp: dict):
 
     variables = build_variable_map(contact)
     subject = substitute(template.get("subject", ""), variables)
-    text_body = substitute(template.get("content_text", ""), variables)
+    body_text = substitute(template.get("content_text", ""), variables)
     html_body = substitute(template.get("content_html", ""), variables)
 
     # Signature from account (with legacy fallback for pre-refactor plain-text field).
@@ -153,21 +153,18 @@ async def _send_job(campaign: dict, job: dict, smtp: dict):
     if not signature_html and smtp.get("signature"):
         signature_html = smtp.get("signature").replace("\n", "<br/>")
     signature_html = substitute(signature_html, variables) if signature_html else ""
-    # Plain-text signature: prefer the account's own text version, else derive a clean one from the HTML.
+    # Plain-text signature (fallback for the text/plain part only).
     signature_text = (smtp.get("signature_text") or "").strip()
     signature_text = substitute(signature_text, variables) if signature_text else html_to_text(signature_html)
-    if signature_text:
-        text_body = (text_body or "") + "\n\n" + signature_text
+    text_body = body_text + (("\n\n" + signature_text) if signature_text else "")
 
     tracking_id = job["tracking_id"]
-    if html_has_visible_content(html_body):
-        # HTML template: send a natural (non-boxed) HTML email with open/click tracking.
-        full_html = compose_email_html(html_body, signature_html)
-        full_html = rewrite_links(full_html, BASE_URL, tracking_id)
-        full_html = inject_open_pixel(full_html, BASE_URL, tracking_id)
-    else:
-        # Plain-text-only template: send as real plain text, without any HTML wrapper.
-        full_html = ""
+    # Always send an HTML alternative so the real HTML signature (logo/fonts/links) arrives intact.
+    # Body stays natural: HTML templates use their HTML; plain-text templates become simple HTML (<br>).
+    body_html = html_body if html_has_visible_content(html_body) else text_to_html(body_text)
+    full_html = compose_email_html(body_html, signature_html)
+    full_html = rewrite_links(full_html, BASE_URL, tracking_id)
+    full_html = inject_open_pixel(full_html, BASE_URL, tracking_id)
 
     await db.email_jobs.update_one({"_id": job["_id"]}, {"$set": {"status": "sending"}})
     try:
@@ -292,22 +289,20 @@ async def _send_sequence_step(campaign, enr, contact, smtp, steps, idx):
     is_reply = step.get("send_type") == "reply" and enr.get("last_message_id")
     if is_reply and enr.get("last_subject"):
         subject = enr["last_subject"] if enr["last_subject"].lower().startswith("re:") else f"Re: {enr['last_subject']}"
-    text_body = substitute(template.get("content_text", ""), variables)
+    body_text = substitute(template.get("content_text", ""), variables)
     html_body = substitute(template.get("content_html", ""), variables)
     sig = smtp.get("signature_html") or (smtp.get("signature") or "").replace("\n", "<br/>")
     sig = substitute(sig, variables) if sig else ""
     sig_text = (smtp.get("signature_text") or "").strip()
     sig_text = substitute(sig_text, variables) if sig_text else html_to_text(sig)
-    if sig_text:
-        text_body = (text_body or "") + "\n\n" + sig_text
+    text_body = body_text + (("\n\n" + sig_text) if sig_text else "")
 
     tracking_id = str(ObjectId())
-    if html_has_visible_content(html_body):
-        full_html = compose_email_html(html_body, sig)
-        full_html = rewrite_links(full_html, BASE_URL, tracking_id)
-        full_html = inject_open_pixel(full_html, BASE_URL, tracking_id)
-    else:
-        full_html = ""
+    # Always include an HTML alternative carrying the real HTML signature.
+    body_html = html_body if html_has_visible_content(html_body) else text_to_html(body_text)
+    full_html = compose_email_html(body_html, sig)
+    full_html = rewrite_links(full_html, BASE_URL, tracking_id)
+    full_html = inject_open_pixel(full_html, BASE_URL, tracking_id)
 
     job_doc = {
         "campaign_id": str(campaign["_id"]), "contact_id": str(contact["_id"]),

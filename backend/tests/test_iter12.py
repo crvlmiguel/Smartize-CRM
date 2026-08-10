@@ -139,7 +139,7 @@ class TestPreviewHtml:
 
 # ---------- API: preview for plain-text template ----------
 class TestPreviewPlainText:
-    def test_text_only_returns_empty_email_html(self, client):
+    def test_text_only_still_returns_html_alternative(self, client):
         r = client.post(f"{BASE_URL}/templates/preview", json={
             "subject": "Olá {first_name}",
             "content_html": "",
@@ -147,7 +147,9 @@ class TestPreviewPlainText:
         }, timeout=30)
         assert r.status_code == 200, r.text
         d = r.json()
-        assert d["email_html"] == "", d["email_html"][:200]
+        # iter16: an HTML alternative is ALWAYS produced (natural body + HTML signature)
+        assert d["email_html"].startswith("<!DOCTYPE html>")
+        assert "Olá João,<br>" in d["email_html"]
         assert d["content_text"].startswith("Olá João,"), d["content_text"]
         assert "{first_name}" not in d["content_text"]
         assert "Abraço,\nCarlos" in d["content_text"]
@@ -158,7 +160,7 @@ class TestPreviewPlainText:
             "subject": "x", "content_html": "   \n  ", "content_text": TEXT_CONTENT,
         }, timeout=30)
         assert r.status_code == 200, r.text
-        assert r.json()["email_html"] == ""
+        assert r.json()["email_html"].startswith("<!DOCTYPE html>")
 
 
 # ---------- Pipeline: campaigns with HTML and text-only templates ----------

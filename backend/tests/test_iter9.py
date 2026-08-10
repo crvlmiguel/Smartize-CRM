@@ -154,9 +154,9 @@ class TestTemplatePreviewVariable:
         }, timeout=60)
         d = p.json()
         assert d["content_text"].startswith("Caro João,")
-        # iter12: plain-text template → email_html empty (sent as real plain text)
-        assert d["email_html"] == ""
-        assert d["content_text"] == "Caro João,\nObrigado."
+        # iter16: plain-text template also produces the HTML alternative
+        assert "Caro João,<br>" in d["email_html"]
+        assert d["content_text"].startswith("Caro João,\nObrigado.")
 
 
 # ---------- EMAIL-SAFE IMG ----------

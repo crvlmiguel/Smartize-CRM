@@ -53,7 +53,8 @@ class TestConverterPreview:
         text = data["content_text"]
         print("PREVIEW TEXT:\n" + text)
         assert "<" not in text and ">" not in text, "HTML tags leaked into plain text"
-        assert data["email_html"] == "", "plain-text template should not produce email_html"
+        assert "Ola João,<br>" in data["email_html"], "iter16: HTML alternative must carry the natural body"
+        assert "<table" in data["email_html"], "iter16: HTML signature must stay HTML"
         assert text.startswith("Ola João,")
         lines = [l for l in text.split("\n") if l.strip()]
         assert "Carlos Santo" in lines

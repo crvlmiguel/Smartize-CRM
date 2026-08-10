@@ -189,13 +189,18 @@ export default function Templates() {
       <Dialog open={!!preview} onOpenChange={(o) => !o && setPreview(null)}>
         <DialogContent className="max-w-2xl" data-testid="preview-dialog">
           <DialogHeader><DialogTitle>Pré-visualização do email (dados de exemplo)</DialogTitle>
-            <DialogDescription>Aspeto do email de texto simples que será enviado.</DialogDescription>
+            <DialogDescription>Aspeto do email que será enviado (corpo natural + assinatura HTML).</DialogDescription>
           </DialogHeader>
           <div className="text-sm mb-2 truncate"><span className="text-muted-foreground">Assunto: </span><span className="font-semibold">{preview?.subject || "—"}</span></div>
-          <div className="bg-white border border-border rounded-md p-6 max-h-[55vh] overflow-y-auto" data-testid="preview-body">
-            <pre className="whitespace-pre-wrap break-words text-sm text-black m-0" style={{ fontFamily: "Arial, Helvetica, sans-serif", lineHeight: 1.6 }}>{preview?.content_text || ""}</pre>
+          <div className="bg-white border border-border rounded-md max-h-[55vh] overflow-y-auto" data-testid="preview-body">
+            <iframe
+              title="email-preview"
+              data-testid="preview-iframe"
+              srcDoc={preview?.email_html || `<pre style="white-space:pre-wrap;font-family:Arial;padding:16px">${preview?.content_text || ""}</pre>`}
+              style={{ width: "100%", height: 460, border: "none", background: "#ffffff" }}
+            />
           </div>
-          <p className="text-xs text-muted-foreground mt-1">Enviado como texto simples (text/plain), sem HTML — inclui a assinatura da conta predefinida no fim.</p>
+          <p className="text-xs text-muted-foreground mt-1">Assim chega ao destinatário: corpo simples/natural e a assinatura HTML da conta (logo, cores, links). Há também uma versão em texto simples como alternativa.</p>
         </DialogContent>
       </Dialog>
 
