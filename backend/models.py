@@ -49,6 +49,10 @@ class ContactUpdate(BaseModel):
     custom_fields: Optional[Dict[str, Any]] = None
 
 
+class BulkDeleteRequest(BaseModel):
+    ids: List[str] = Field(default_factory=list)
+
+
 # ---------------- Groups ----------------
 class GroupCreate(BaseModel):
     name: str

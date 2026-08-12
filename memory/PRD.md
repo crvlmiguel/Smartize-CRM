@@ -40,7 +40,12 @@ Fluxo: SMTP → Contactos → Grupos → Template → Campanha → Enviar/Agenda
 - **P2**: Campos personalizados na UI de contactos; slugs ASCII nos nav-testids.
 - **P3 (futuro)**: IA, SMS/WhatsApp.
 
-## Iteração 17c — "..." do Gmail: marcador único levemente visível (opacity:0 não é fiável) (2026-08-10)
+## Iteração 18 — Contactos: eliminação em massa + filtro "Sem grupo" (2026-08-12)
+- **Eliminar vários contactos**: checkbox por linha + checkbox "selecionar todos" no cabeçalho; barra de ações ("N selecionado(s)", "Limpar seleção", "Eliminar selecionados") + diálogo de confirmação. Backend: `POST /api/contacts/bulk-delete` ({ids:[...]}) → `delete_many` (400 se lista vazia). Testado via curl (elimina N, 404 depois) + screenshot UI.
+- **Filtro "Sem grupo"**: nova opção no dropdown de grupos (mantém "Todos os grupos" e grupos existentes). Backend: `group_id=none` → `{"group_id": {"$in": [None, ""]}}` (cobre null/inexistente/vazio). Testado via curl.
+- Ficheiros: `frontend/src/pages/Contacts.jsx`, `backend/api.py` (list_contacts, bulk_delete_contacts), `backend/models.py` (BulkDeleteRequest).
+
+
 - **Estado**: o utilizador fez redeploy da correção anterior (token `opacity:0` no fim) e o "..." CONTINUOU. Pesquisa 2025/2026 confirma: **truques totalmente invisíveis (opacity:0/display:none) já não são fiáveis** — o Gmail ignora nós ocultos ao decidir o que é conteúdo "duplicado" (ou remove o CSS). O método fiável é **texto único, real e levemente visível**.
 - **Fix**: `inject_anti_trim`/`_unique_marker` passam a anexar no FIM do email um `<div>` com o token único do email em `font-size:8px;color:#e6e6e6` (cinzento muito claro, praticamente impercetível em fundo branco). É conteúdo renderizado real → cada email fica único → o Gmail não colapsa a assinatura. Removido o `opacity:0`. Corpo plain text e assinatura inalterados; imagem do logo intacta.
 - **Nota importante (mecanismo)**: o colapso ocorre sobretudo quando a MESMA caixa recebe emails quase idênticos (ex.: o utilizador a testar para a própria caixa repetidamente). Para prospects reais (email personalizado, primeiro contacto) normalmente não colapsa. O marcador único cobre ambos os casos.

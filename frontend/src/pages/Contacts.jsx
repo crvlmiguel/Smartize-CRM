@@ -19,6 +19,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import api, { apiError } from "@/lib/api";
 import { PageHeader, StatusBadge, EmptyState } from "@/components/common";
 
@@ -39,6 +40,8 @@ export default function Contacts() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY);
   const [toDelete, setToDelete] = useState(null);
+  const [selected, setSelected] = useState(new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState(null);
   const [importGroup, setImportGroup] = useState("none");
@@ -66,7 +69,7 @@ export default function Contacts() {
     if (search) params.search = search;
     if (groupFilter !== "all") params.group_id = groupFilter;
     if (statusFilter !== "all") params.status = statusFilter;
-    api.get("/contacts", { params }).then((r) => setContacts(r.data)).catch(() => {});
+    api.get("/contacts", { params }).then((r) => { setContacts(r.data); setSelected(new Set()); }).catch(() => {});
   }, [search, groupFilter, statusFilter]);
 
   useEffect(() => { api.get("/groups").then((r) => setGroups(r.data)).catch(() => {}); }, []);
@@ -95,6 +98,21 @@ export default function Contacts() {
   const confirmDelete = async () => {
     try { await api.delete(`/contacts/${toDelete.id}`); toast.success("Contacto eliminado"); setToDelete(null); load(); }
     catch (e) { toast.error(apiError(e)); }
+  };
+
+  const allSelected = contacts.length > 0 && contacts.every((c) => selected.has(c.id));
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(contacts.map((c) => c.id)));
+  const toggleOne = (id) => setSelected((s) => {
+    const n = new Set(s);
+    n.has(id) ? n.delete(id) : n.add(id);
+    return n;
+  });
+  const confirmBulkDelete = async () => {
+    try {
+      const { data } = await api.post("/contacts/bulk-delete", { ids: [...selected] });
+      toast.success(`${data.deleted} contacto(s) eliminado(s)`);
+      setBulkOpen(false); setSelected(new Set()); load();
+    } catch (e) { toast.error(apiError(e)); }
   };
 
   const createDealFromContact = (c) => {
@@ -160,6 +178,7 @@ export default function Contacts() {
           <SelectTrigger className="w-[180px]" data-testid="filter-group-select"><SelectValue placeholder="Grupo" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos os grupos</SelectItem>
+            <SelectItem value="none">Sem grupo</SelectItem>
             {groups.map((g) => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
           </SelectContent>
         </Select>
@@ -172,6 +191,16 @@ export default function Contacts() {
         </Select>
       </div>
 
+      {selected.size > 0 && (
+        <div className="flex items-center justify-between bg-secondary/50 border border-border rounded-md px-4 py-2 mb-3" data-testid="bulk-actions-bar">
+          <span className="text-sm font-medium">{selected.size} contacto(s) selecionado(s)</span>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())} data-testid="clear-selection-button">Limpar seleção</Button>
+            <Button variant="destructive" size="sm" onClick={() => setBulkOpen(true)} data-testid="bulk-delete-button"><Trash2 size={15} className="mr-1.5" /> Eliminar selecionados</Button>
+          </div>
+        </div>
+      )}
+
       {contacts.length === 0 ? (
         <EmptyState title="Sem contactos" description="Crie manualmente ou importe um ficheiro CSV/Excel."
           action={<Button onClick={openNew}><Plus size={16} className="mr-1.5" /> Novo contacto</Button>} />
@@ -180,6 +209,9 @@ export default function Contacts() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-[44px]">
+                  <Checkbox checked={allSelected} onCheckedChange={toggleAll} data-testid="select-all-contacts" aria-label="Selecionar todos" />
+                </TableHead>
                 <TableHead>Nome</TableHead>
                 <TableHead>Saudação</TableHead>
                 <TableHead>Email</TableHead>
@@ -191,7 +223,10 @@ export default function Contacts() {
             </TableHeader>
             <TableBody>
               {contacts.map((c) => (
-                <TableRow key={c.id} data-testid={`contact-row-${c.id}`}>
+                <TableRow key={c.id} data-testid={`contact-row-${c.id}`} data-state={selected.has(c.id) ? "selected" : undefined}>
+                  <TableCell>
+                    <Checkbox checked={selected.has(c.id)} onCheckedChange={() => toggleOne(c.id)} data-testid={`select-contact-${c.id}`} aria-label="Selecionar contacto" />
+                  </TableCell>
                   <TableCell className="font-medium">{`${c.first_name || ""} ${c.last_name || ""}`.trim() || "—"}</TableCell>
                   <TableCell className="text-muted-foreground" data-testid={`contact-saudacao-${c.id}`}>{c.saudacao || "—"}</TableCell>
                   <TableCell className="font-mono text-xs">{c.email}</TableCell>
@@ -381,6 +416,17 @@ Maria,Costa,Cara,maria@empresa.pt,Empresa ABC,Marketing Director,+351911111111</
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={confirmDelete} data-testid="confirm-delete-contact">Eliminar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={bulkOpen} onOpenChange={setBulkOpen}>
+        <AlertDialogContent data-testid="bulk-delete-dialog">
+          <AlertDialogHeader><AlertDialogTitle>Eliminar {selected.size} contacto(s)?</AlertDialogTitle>
+            <AlertDialogDescription>Vai eliminar {selected.size} contacto(s) de forma permanente. Esta ação não pode ser revertida.</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmBulkDelete} data-testid="confirm-bulk-delete">Eliminar selecionados</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

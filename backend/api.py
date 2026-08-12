@@ -19,7 +19,7 @@ from worker import build_campaign_jobs, build_enrollments
 from models import (
     ContactCreate, ContactUpdate, GroupCreate, GroupUpdate,
     TemplateCreate, TemplateUpdate, SmtpCreate, SmtpUpdate, SmtpTestRequest,
-    CampaignCreate, CampaignUpdate, SettingsUpdate, SmtpTestSendRequest,
+    CampaignCreate, CampaignUpdate, SettingsUpdate, SmtpTestSendRequest, BulkDeleteRequest,
 )
 
 api = APIRouter(prefix="/api")
@@ -61,7 +61,9 @@ async def list_contacts(
     user=Depends(get_current_user),
 ):
     q = {}
-    if group_id:
+    if group_id == "none":
+        q["group_id"] = {"$in": [None, ""]}
+    elif group_id:
         q["group_id"] = group_id
     if status:
         q["status"] = status
@@ -120,6 +122,15 @@ async def update_contact(contact_id: str, payload: ContactUpdate, user=Depends(g
 async def delete_contact(contact_id: str, user=Depends(get_current_user)):
     await db.contacts.delete_one({"_id": _oid(contact_id)})
     return {"ok": True}
+
+
+@api.post("/contacts/bulk-delete")
+async def bulk_delete_contacts(payload: BulkDeleteRequest, user=Depends(get_current_user)):
+    if not payload.ids:
+        raise HTTPException(status_code=400, detail="Nenhum contacto selecionado")
+    oids = [_oid(i) for i in payload.ids]
+    res = await db.contacts.delete_many({"_id": {"$in": oids}})
+    return {"ok": True, "deleted": res.deleted_count}
 
 
 HEADER_MAP = {
