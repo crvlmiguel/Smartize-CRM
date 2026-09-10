@@ -84,7 +84,14 @@ export default function Dashboard() {
             {(data?.recent_campaigns || []).length === 0 && (
               <p className="text-sm text-muted-foreground">Sem campanhas ainda.</p>
             )}
-            {(data?.recent_campaigns || []).map((c) => (
+            {(data?.recent_campaigns || []).map((c) => {
+              const rate = c.stats?.bounce_rate || 0;
+              const health = rate > 5
+                ? { dot: "bg-red-500", text: "text-red-600", label: "Crítico" }
+                : rate >= 2
+                ? { dot: "bg-amber-500", text: "text-amber-600", label: "Atenção" }
+                : { dot: "bg-emerald-500", text: "text-emerald-600", label: "Saudável" };
+              return (
               <button
                 key={c.id}
                 onClick={() => navigate(`/campanhas/${c.id}`)}
@@ -95,11 +102,18 @@ export default function Dashboard() {
                   <span className="font-semibold text-sm truncate">{c.name}</span>
                   <StatusBadge status={c.status} />
                 </div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  {c.stats?.sent || 0} enviados · {c.stats?.open_rate || 0}% abertura
+                <div className="flex items-center justify-between gap-2 mt-1">
+                  <div className="text-xs text-muted-foreground">
+                    {c.stats?.sent || 0} enviados · {c.stats?.open_rate || 0}% abertura
+                  </div>
+                  <div className={`flex items-center gap-1.5 text-xs font-medium ${health.text}`} title={`Taxa de bounce: ${rate}% — ${health.label}`} data-testid={`campaign-bounce-health-${c.id}`}>
+                    <span className={`inline-block w-2 h-2 rounded-full ${health.dot}`} />
+                    {rate}% bounce · {health.label}
+                  </div>
                 </div>
               </button>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>

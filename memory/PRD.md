@@ -40,7 +40,11 @@ Fluxo: SMTP → Contactos → Grupos → Template → Campanha → Enviar/Agenda
 - **P2**: Campos personalizados na UI de contactos; slugs ASCII nos nav-testids.
 - **P3 (futuro)**: IA, SMS/WhatsApp.
 
-## Iteração 21 — Modelos de Newsletter prontos (2026-09-10)
+## Iteração 22 — Saúde de envio no Dashboard (taxa de bounce por campanha) (2026-09-10)
+- Em "Últimas campanhas" (Dashboard) cada campanha mostra agora a **taxa de bounce** com indicador de saúde: verde "Saudável" (<2%), âmbar "Atenção" (2–5%), vermelho "Crítico" (>5%). Usa `stats.bounce_rate` já devolvido por `_campaign_stats` (só alteração de frontend em `Dashboard.jsx`). `data-testid` `campaign-bounce-health-<id>`.
+- Verificado por screenshot (campanha demo com 20% → "Crítico" vermelho).
+
+
 - Adicionados 3 layouts HTML prontos (email-safe, marca Smartize) no editor Newsletter HTML de `Templates.jsx`: **Anúncio** (cabeçalho + intro + botão CTA + rodapé), **Promoção** (banner escuro + oferta + CTA), **Novidades** (lista de itens + CTA + rodapé). Botão por modelo abaixo da textarea (`newsletter-model-<nome>`); aplica o HTML (com confirmação se já houver conteúdo) via `applyModel`. Usam variáveis ({{first_name}}, {{saudacao}}, {{company}}).
 - Testado por screenshot: 3 modelos presentes, "Promoção" aplicado e preview renderiza o layout corretamente.
 
