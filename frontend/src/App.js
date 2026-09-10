@@ -13,6 +13,7 @@ import Campaigns from "@/pages/Campaigns";
 import CampaignDetail from "@/pages/CampaignDetail";
 import Negocios from "@/pages/Negocios";
 import Statistics from "@/pages/Statistics";
+import Bounces from "@/pages/Bounces";
 import Settings from "@/pages/Settings";
 import NotFound from "@/pages/NotFound";
 import { Logo } from "@/components/Logo";
@@ -55,6 +56,7 @@ function App() {
                 <Route path="campanhas/:id" element={<CampaignDetail />} />
                 <Route path="negocios" element={<Negocios />} />
                 <Route path="estatisticas" element={<Statistics />} />
+                <Route path="bounces" element={<Bounces />} />
                 <Route path="configuracoes" element={<Settings />} />
                 <Route path="smtp" element={<Navigate to="/configuracoes" replace />} />
                 <Route path="deliverability" element={<Navigate to="/configuracoes" replace />} />

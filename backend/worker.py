@@ -134,6 +134,24 @@ async def process_due_jobs():
         logger.exception("process_due_jobs error: %s", e)
 
 
+def render_email(template: dict, signature_html: str, signature_text: str, variables: dict, tracking_id: str):
+    """Build (full_html, text_body) for a template, honoring its type.
+    - plain: natural body (<br>) + real HTML signature (multipart alternative).
+    - html (newsletter): the authored HTML sent EXACTLY as created (no wrapper, no signature)."""
+    body_text = substitute(template.get("content_text", ""), variables)
+    html_body = substitute(template.get("content_html", ""), variables)
+    if (template.get("type") or "plain") == "html":
+        full_html = html_body if html_has_visible_content(html_body) else text_to_html(body_text)
+        text_body = html_to_text(html_body) or body_text
+    else:
+        text_body = body_text + (("\n\n" + signature_text) if signature_text else "")
+        body_html = html_body if html_has_visible_content(html_body) else text_to_html(body_text)
+        full_html = compose_email_html(body_html, signature_html)
+    full_html = rewrite_links(full_html, BASE_URL, tracking_id)
+    full_html = inject_open_pixel(full_html, BASE_URL, tracking_id)
+    return full_html, text_body
+
+
 async def _send_job(campaign: dict, job: dict, smtp: dict):
     contact = await db.contacts.find_one({"_id": ObjectId(job["contact_id"])})
     template = await db.templates.find_one({"_id": ObjectId(campaign["template_id"])})
@@ -146,26 +164,17 @@ async def _send_job(campaign: dict, job: dict, smtp: dict):
 
     variables = build_variable_map(contact)
     subject = substitute(template.get("subject", ""), variables)
-    body_text = substitute(template.get("content_text", ""), variables)
-    html_body = substitute(template.get("content_html", ""), variables)
 
     # Signature from account (with legacy fallback for pre-refactor plain-text field).
     signature_html = smtp.get("signature_html") or ""
     if not signature_html and smtp.get("signature"):
         signature_html = smtp.get("signature").replace("\n", "<br/>")
     signature_html = substitute(signature_html, variables) if signature_html else ""
-    # Plain-text signature (fallback for the text/plain part only).
     signature_text = (smtp.get("signature_text") or "").strip()
     signature_text = substitute(signature_text, variables) if signature_text else html_to_text(signature_html)
-    text_body = body_text + (("\n\n" + signature_text) if signature_text else "")
 
     tracking_id = job["tracking_id"]
-    # Always send an HTML alternative so the real HTML signature (logo/fonts/links) arrives intact.
-    # Body stays natural: HTML templates use their HTML; plain-text templates become simple HTML (<br>).
-    body_html = html_body if html_has_visible_content(html_body) else text_to_html(body_text)
-    full_html = compose_email_html(body_html, signature_html)
-    full_html = rewrite_links(full_html, BASE_URL, tracking_id)
-    full_html = inject_open_pixel(full_html, BASE_URL, tracking_id)
+    full_html, text_body = render_email(template, signature_html, signature_text, variables, tracking_id)
 
     await db.email_jobs.update_one({"_id": job["_id"]}, {"$set": {"status": "sending"}})
     try:
@@ -292,20 +301,13 @@ async def _send_sequence_step(campaign, enr, contact, smtp, steps, idx):
     is_reply = step.get("send_type") == "reply" and enr.get("last_message_id")
     if is_reply and enr.get("last_subject"):
         subject = enr["last_subject"] if enr["last_subject"].lower().startswith("re:") else f"Re: {enr['last_subject']}"
-    body_text = substitute(template.get("content_text", ""), variables)
-    html_body = substitute(template.get("content_html", ""), variables)
     sig = smtp.get("signature_html") or (smtp.get("signature") or "").replace("\n", "<br/>")
     sig = substitute(sig, variables) if sig else ""
     sig_text = (smtp.get("signature_text") or "").strip()
     sig_text = substitute(sig_text, variables) if sig_text else html_to_text(sig)
-    text_body = body_text + (("\n\n" + sig_text) if sig_text else "")
 
     tracking_id = str(ObjectId())
-    # Always include an HTML alternative carrying the real HTML signature.
-    body_html = html_body if html_has_visible_content(html_body) else text_to_html(body_text)
-    full_html = compose_email_html(body_html, sig)
-    full_html = rewrite_links(full_html, BASE_URL, tracking_id)
-    full_html = inject_open_pixel(full_html, BASE_URL, tracking_id)
+    full_html, text_body = render_email(template, sig, sig_text, variables, tracking_id)
 
     job_doc = {
         "campaign_id": str(campaign["_id"]), "contact_id": str(contact["_id"]),

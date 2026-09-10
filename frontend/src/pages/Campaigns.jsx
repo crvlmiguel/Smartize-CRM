@@ -37,7 +37,7 @@ export default function Campaigns() {
 
   function base() {
     return {
-      name: "", smtp_account_id: "", group_id: "", template_id: "",
+      name: "", smtp_account_id: "", group_id: "", template_id: "", type: "normal",
       scheduleMode: "now", schedule_at: "", settings: { ...DEFAULT_SETTINGS },
       is_sequence: false, steps: [],
     };
@@ -61,6 +61,7 @@ export default function Campaigns() {
     name: form.name,
     smtp_account_id: form.smtp_account_id,
     group_id: form.group_id,
+    type: form.type,
     template_id: form.is_sequence ? null : form.template_id,
     is_sequence: form.is_sequence,
     steps: form.is_sequence
@@ -156,6 +157,10 @@ export default function Campaigns() {
 
   const setS = (k, v) => setForm({ ...form, settings: { ...form.settings, [k]: v } });
 
+  const templateMatchesType = (t) => (form.type === "newsletter" ? t.type === "html" : (t.type || "plain") === "plain");
+  const availTemplates = templates.filter(templateMatchesType);
+  const setCampaignType = (type) => setForm((f) => ({ ...f, type, template_id: "", steps: f.steps.map((s) => ({ ...s, template_id: "" })) }));
+
   return (
     <div data-testid="campaigns-page">
       <PageHeader title="Campanhas" subtitle="Crie e acompanhe campanhas de email outbound.">
@@ -230,6 +235,22 @@ export default function Campaigns() {
                 </Select>
               </div>
 
+              <div>
+                <Label>Tipo de campanha</Label>
+                <div className="grid grid-cols-2 gap-3 mt-1.5">
+                  <button type="button" onClick={() => setCampaignType("normal")} data-testid="campaign-type-normal"
+                    className={`p-3 rounded-md border text-left ${form.type === "normal" ? "border-primary bg-primary/5" : "border-border"}`}>
+                    <div className="font-semibold text-sm">Campanha normal</div>
+                    <div className="text-xs text-muted-foreground">Usa templates de texto simples.</div>
+                  </button>
+                  <button type="button" onClick={() => setCampaignType("newsletter")} data-testid="campaign-type-newsletter"
+                    className={`p-3 rounded-md border text-left ${form.type === "newsletter" ? "border-primary bg-primary/5" : "border-border"}`}>
+                    <div className="font-semibold text-sm">Campanha Newsletter</div>
+                    <div className="text-xs text-muted-foreground">Usa templates HTML.</div>
+                  </button>
+                </div>
+              </div>
+
               <div className="flex items-center justify-between rounded-md border border-border p-3">
                 <div className="flex items-center gap-2">
                   <Layers size={16} className="text-primary" />
@@ -246,7 +267,7 @@ export default function Campaigns() {
                   <Label>Template</Label>
                   <Select value={form.template_id} onValueChange={(v) => setForm({ ...form, template_id: v })}>
                     <SelectTrigger className="mt-1.5" data-testid="campaign-template-select"><SelectValue placeholder="Selecionar template" /></SelectTrigger>
-                    <SelectContent>{templates.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}</SelectContent>
+                    <SelectContent>{availTemplates.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
               ) : (
@@ -272,7 +293,7 @@ export default function Campaigns() {
                         <Label className="text-xs">Template</Label>
                         <Select value={st.template_id} onValueChange={(v) => updateStep(i, "template_id", v)}>
                           <SelectTrigger className="mt-1" data-testid={`step-template-select-${i}`}><SelectValue placeholder="Selecionar template" /></SelectTrigger>
-                          <SelectContent>{templates.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}</SelectContent>
+                          <SelectContent>{availTemplates.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}</SelectContent>
                         </Select>
                       </div>
                       {i > 0 && (

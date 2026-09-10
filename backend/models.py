@@ -70,6 +70,7 @@ class TemplateCreate(BaseModel):
     subject: str = ""
     content_html: str = ""
     content_text: str = ""
+    type: str = "plain"  # plain | html
 
 
 class TemplateUpdate(BaseModel):
@@ -77,6 +78,16 @@ class TemplateUpdate(BaseModel):
     subject: Optional[str] = None
     content_html: Optional[str] = None
     content_text: Optional[str] = None
+    type: Optional[str] = None
+
+
+class TemplateTestSend(BaseModel):
+    to_email: str
+    subject: str = ""
+    content_html: str = ""
+    content_text: str = ""
+    type: str = "plain"
+    smtp_account_id: Optional[str] = None
 
 
 # ---------------- SMTP ----------------
@@ -162,6 +173,7 @@ class CampaignCreate(BaseModel):
     smtp_account_id: Optional[str] = None
     group_id: str
     template_id: Optional[str] = None
+    type: str = "normal"  # normal | newsletter
     schedule_at: Optional[str] = None  # ISO string; None = send now
     settings: CampaignSettings = Field(default_factory=CampaignSettings)
     is_sequence: bool = False
@@ -173,6 +185,7 @@ class CampaignUpdate(BaseModel):
     smtp_account_id: Optional[str] = None
     group_id: Optional[str] = None
     template_id: Optional[str] = None
+    type: Optional[str] = None
     schedule_at: Optional[str] = None
     settings: Optional[CampaignSettings] = None
 

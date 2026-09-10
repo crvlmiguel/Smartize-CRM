@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, FolderKanban, FileText, Send,
-  BarChart3, Settings as SettingsIcon, LogOut, Briefcase,
+  BarChart3, Settings as SettingsIcon, LogOut, Briefcase, AlertTriangle,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Logo } from "@/components/Logo";
@@ -12,6 +12,7 @@ const NAV = [
   { to: "/grupos", label: "Grupos", icon: FolderKanban },
   { to: "/templates", label: "Templates", icon: FileText },
   { to: "/campanhas", label: "Campanhas", icon: Send },
+  { to: "/bounces", label: "Bounces", icon: AlertTriangle },
   { to: "/negocios", label: "Negócios", icon: Briefcase },
   { to: "/estatisticas", label: "Estatísticas", icon: BarChart3 },
   { to: "/configuracoes", label: "Configurações", icon: SettingsIcon },

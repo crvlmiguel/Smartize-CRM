@@ -1,0 +1,29 @@
+{
+  "summary": "Iteration 20 (Newsletter HTML templates + Bounces page). Backend: 9/9 pytest passed. Frontend: preview HTML exact, test-send button conditional, badge, campaign type filter and Bounces page all work. Found 1 real UX bug: opening Preview from the Template editor and then closing it (via Escape or outside click) also closes the underlying Template edit dialog, losing all user input — user cannot preview then save.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Templates.jsx", "issue": "Preview and Template editor are sibling Radix <Dialog> components. When both are open and the Preview is dismissed (Escape or outside-click), the underlying Template edit dialog also closes, discarding all form data. Users must re-enter name/subject/HTML/text after previewing to be able to Save.", "selector": "[data-testid=\"preview-template-button\"] -> [data-testid=\"preview-iframe\"]", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_iter20_newsletter_bounces.py", "/app/test_reports/pytest/iter20.xml"],
+  "action_items": [
+    "Fix the nested-dialog UX in Templates.jsx: either render Preview as a controlled sub-panel INSIDE the same DialogContent (toggle in place), or use modal={false} on the outer Dialog / manage z-index so closing Preview does not close the editor. Recommended: keep the Preview inline (an expandable panel) or open Preview with the editor Dialog closed but state preserved."
+  ],
+  "critical_code_review_comments": [
+    "Templates.jsx: two top-level Dialogs (`open` and `preview`) leads to Radix closing both on Escape/outside click — nested modal anti-pattern. Prefer a single dialog with a preview toggle.",
+    "api.py preview_template accepts a raw `dict` body — no Pydantic validation; consider a TemplatePreview model for type-safety.",
+    "worker.render_email correctly branches on template.type; html branch bypasses signature — matches spec (verified via preview endpoint output).",
+    "Bounces.jsx export-bounces button toasts 'Nada para exportar' but is not disabled when no rows — minor."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter20_newsletter_bounces.py"],
+  "success_rate": {"backend": "100% (9/9)", "frontend": "90% (5/6 flows; 1 modal UX bug)"},
+  "test_credentials": "carlos.miguel@smartize.pt / 100%Smartize",
+  "seed_data_creation": "Tests create+delete TEST_-prefixed templates in-flight.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend for newsletter templates and bounces endpoint is fully verified. Remaining issue is a frontend UX bug in /app/frontend/src/pages/Templates.jsx where the Preview Dialog closes the parent template editor Dialog on dismiss. After fix, re-test: open Templates -> Novo template -> template-type-html -> fill fields -> Preview (verify iframe still shows exact HTML) -> close Preview (Escape/outside click) -> verify Template edit dialog stays open with data intact -> Save. Also validate the same flow works for plain templates (which historically may have same issue).",
+  "rca of the issue": "Templates.jsx renders `<Dialog open={open}>` (template editor) and `<Dialog open={!!preview}>` (preview) as siblings. Radix @radix-ui/react-dialog renders a DialogOverlay per open dialog. When the topmost preview is dismissed by outside-click, the mousedown event that closes it also hits the underlying editor's overlay pointer target — causing both to unmount together and losing all component state (form). Reproduction: /templates -> Novo template -> template-type-html -> fill fields -> Preview -> click outside preview or press Escape twice -> observe editor dialog is gone, form data lost. Mitigation: put preview inline as a collapsible section within the same DialogContent, or gate the outer dialog with modal={false}, or open Preview via a portal that stops event propagation."
+}

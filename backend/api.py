@@ -15,11 +15,12 @@ from fastapi.responses import Response, RedirectResponse
 from core import db, now_utc, encrypt_secret
 from auth import get_current_user
 from email_service import build_variable_map, substitute, test_smtp_connection, send_email, compose_email_html, html_has_visible_content, html_to_text, text_to_html, inject_anti_trim, sanitize_signature_html
-from worker import build_campaign_jobs, build_enrollments
+from worker import build_campaign_jobs, build_enrollments, render_email
 from models import (
     ContactCreate, ContactUpdate, GroupCreate, GroupUpdate,
     TemplateCreate, TemplateUpdate, SmtpCreate, SmtpUpdate, SmtpTestRequest,
     CampaignCreate, CampaignUpdate, SettingsUpdate, SmtpTestSendRequest, BulkDeleteRequest,
+    TemplateTestSend,
 )
 
 api = APIRouter(prefix="/api")
@@ -131,6 +132,33 @@ async def bulk_delete_contacts(payload: BulkDeleteRequest, user=Depends(get_curr
     oids = [_oid(i) for i in payload.ids]
     res = await db.contacts.delete_many({"_id": {"$in": oids}})
     return {"ok": True, "deleted": res.deleted_count}
+
+
+@api.get("/bounces")
+async def list_bounces(user=Depends(get_current_user)):
+    docs = await db.bounces.find().sort("created_at", -1).to_list(5000)
+    camp_names, contact_names = {}, {}
+    for cid in {d.get("campaign_id") for d in docs if d.get("campaign_id")}:
+        try:
+            c = await db.campaigns.find_one({"_id": _oid(cid)}, {"name": 1})
+            if c:
+                camp_names[cid] = c.get("name", "")
+        except Exception:
+            pass
+    for cid in {d.get("contact_id") for d in docs if d.get("contact_id")}:
+        try:
+            c = await db.contacts.find_one({"_id": _oid(cid)}, {"first_name": 1, "last_name": 1})
+            if c:
+                contact_names[cid] = f"{c.get('first_name', '')} {c.get('last_name', '')}".strip()
+        except Exception:
+            pass
+    out = []
+    for d in docs:
+        s = serialize(d)
+        s["campaign_name"] = camp_names.get(d.get("campaign_id"), "")
+        s["contact_name"] = contact_names.get(d.get("contact_id"), "")
+        out.append(s)
+    return out
 
 
 HEADER_MAP = {
@@ -390,6 +418,14 @@ async def preview_template(body: dict, user=Depends(get_current_user)):
     variables = build_variable_map(contact)
     content_html = substitute(body.get("content_html", ""), variables)
     content_text = substitute(body.get("content_text", ""), variables)
+    # Newsletter HTML: preview mirrors exactly what is sent — the authored HTML, no wrapper/signature.
+    if body.get("type") == "html":
+        return {
+            "subject": substitute(body.get("subject", ""), variables),
+            "content_html": content_html,
+            "content_text": html_to_text(content_html),
+            "email_html": content_html,
+        }
     # Signature: use the one provided, or fall back to the default sending account.
     sig = body.get("signature_html")
     sig_text_override = None
@@ -411,6 +447,34 @@ async def preview_template(body: dict, user=Depends(get_current_user)):
         "content_text": text_preview,
         "email_html": email_html,
     }
+
+
+@api.post("/templates/test-send")
+async def template_test_send(payload: TemplateTestSend, user=Depends(get_current_user)):
+    if not valid_email(payload.to_email):
+        raise HTTPException(status_code=400, detail="Email inválido")
+    smtp = None
+    if payload.smtp_account_id:
+        smtp = await db.smtp_accounts.find_one({"_id": _oid(payload.smtp_account_id)})
+    if not smtp:
+        smtp = await db.smtp_accounts.find_one({"is_default": True}) or await db.smtp_accounts.find_one({})
+    if not smtp:
+        raise HTTPException(status_code=400, detail="Sem conta de envio configurada")
+    sample = {"first_name": "João", "last_name": "Silva", "saudacao": "Caro", "company": "Smartize",
+              "position": "CEO", "email": payload.to_email, "phone": "+351 900 000 000",
+              "city": "Lisboa", "country": "Portugal", "website": "smartize.pt", "custom_fields": {}}
+    variables = build_variable_map(sample)
+    subject = substitute(payload.subject or "(sem assunto)", variables)
+    sig = substitute(smtp.get("signature_html", "") or "", variables)
+    sig_text = (smtp.get("signature_text") or "").strip()
+    sig_text = substitute(sig_text, variables) if sig_text else html_to_text(sig)
+    tmpl = {"type": payload.type, "content_html": payload.content_html, "content_text": payload.content_text}
+    full_html, text_body = render_email(tmpl, sig, sig_text, variables, uuid.uuid4().hex)
+    try:
+        await send_email(smtp, payload.to_email, subject, full_html, text_body)
+        return {"success": True, "message": f"Email de teste enviado para {payload.to_email}"}
+    except Exception as e:
+        return {"success": False, "message": f"Falha no envio: {str(e)}"}
 
 
 @api.post("/uploads/image")

@@ -40,7 +40,13 @@ Fluxo: SMTP → Contactos → Grupos → Template → Campanha → Enviar/Agenda
 - **P2**: Campos personalizados na UI de contactos; slugs ASCII nos nav-testids.
 - **P3 (futuro)**: IA, SMS/WhatsApp.
 
-## Iteração 19 — Gestão automática de bounces (hard/soft) (2026-09-10)
+## Iteração 20 — Newsletter HTML + Página de Bounces (2026-09-10)
+- **Newsletter HTML** (texto simples intacto): templates ganham `type` (plain|html). Editor em `Templates.jsx` com seletor de tipo; modo HTML tem textarea de código, inserir variáveis, **preview inline** (iframe dentro do próprio dialog — evita o anti-pattern de dialogs aninhados) e botão **Enviar teste** (`POST /api/templates/test-send`). Campanhas ganham `type` (normal|newsletter) e o dropdown de template filtra por tipo (`availTemplates`). Backend: `worker.render_email` (helper partilhado por _send_job e _send_sequence_step) — html envia o HTML **exatamente como criado** (sem wrapper, sem assinatura, text/plain derivado); plain mantém compose_email_html + assinatura. `/templates/preview` tem branch type=html (email_html = HTML exato).
+- **Página de Bounces** (`/bounces`, nav novo): tabela com email, contacto, tipo (hard/soft), motivo, origem, campanha, data; pesquisa + filtro por tipo + **exportar CSV** (client-side). Endpoint `GET /api/bounces` (enriquece contact_name/campaign_name).
+- **Testado**: backend 9/9 (test_iter20_newsletter_bounces.py) + iter19 7/7 = 16 verdes; curl (template html CRUD/preview exato, plain preservado); frontend via testing_agent 90% → 1 bug HIGH (preview fechava o editor e perdia dados) CORRIGIDO (preview agora inline) e verificado por screenshot (editor mantém-se aberto + dados preservados).
+- NOTA: envio SMTP real e bounces por IMAP não testáveis no preview (contas fictícias) — validação final em produção.
+
+
 - **Novo módulo `backend/bounces.py`**: `classify_bounce` (hard/soft via códigos 5.x.x/4.x.x + palavras-chave), `parse_dsn` (extrai destinatários falhados de emails DSN/MAILER-DAEMON: Final-Recipient/Status/Diagnostic-Code + fallback X-Failed-Recipients), `is_bounce_candidate`, `mark_bounce` (grava histórico em coleção `bounces`, atualiza contacto com bounce_type/bounce_reason/bounced_at/soft_bounce_count, bloqueia em hard ou após 3 soft, cancela jobs pendentes + para enrollments).
 - **Deteção imediata (SMTP)** em `worker.py _send_job`: classifica a exceção de envio → hard bounce bloqueia já; soft faz retry e, esgotadas as tentativas, regista soft bounce.
 - **Deteção assíncrona (IMAP)** em `imap_sync.py`: mensagens de MAILER-DAEMON/postmaster ou assuntos de falha são buscadas por completo e parseadas (parse_dsn) → mark_bounce por cada destinatário.
