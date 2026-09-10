@@ -40,7 +40,16 @@ Fluxo: SMTP → Contactos → Grupos → Template → Campanha → Enviar/Agenda
 - **P2**: Campos personalizados na UI de contactos; slugs ASCII nos nav-testids.
 - **P3 (futuro)**: IA, SMS/WhatsApp.
 
-## Iteração 18 — Contactos: eliminação em massa + filtro "Sem grupo" (2026-08-12)
+## Iteração 19 — Gestão automática de bounces (hard/soft) (2026-09-10)
+- **Novo módulo `backend/bounces.py`**: `classify_bounce` (hard/soft via códigos 5.x.x/4.x.x + palavras-chave), `parse_dsn` (extrai destinatários falhados de emails DSN/MAILER-DAEMON: Final-Recipient/Status/Diagnostic-Code + fallback X-Failed-Recipients), `is_bounce_candidate`, `mark_bounce` (grava histórico em coleção `bounces`, atualiza contacto com bounce_type/bounce_reason/bounced_at/soft_bounce_count, bloqueia em hard ou após 3 soft, cancela jobs pendentes + para enrollments).
+- **Deteção imediata (SMTP)** em `worker.py _send_job`: classifica a exceção de envio → hard bounce bloqueia já; soft faz retry e, esgotadas as tentativas, regista soft bounce.
+- **Deteção assíncrona (IMAP)** em `imap_sync.py`: mensagens de MAILER-DAEMON/postmaster ou assuntos de falha são buscadas por completo e parseadas (parse_dsn) → mark_bounce por cada destinatário.
+- **Exclusão em campanhas**: `POST /campaigns/{id}/start` já filtrava `status $nin [bounce, descadastrado]` (mantido) → contactos bounced nunca são selecionados.
+- **UI Contactos**: filtro por estado "bounce" (já existente) permite ver todos os bounced; nova linha por baixo do badge mostra "Hard/Soft: <motivo>".
+- **Testado**: `tests/test_iter19_bounce.py` (7) — classificação, DSN parsing, mark_bounce hard bloqueia+cancela jobs, soft bloqueia após limiar. Regressão 22 verde. UI verificada por screenshot. NOTA: o fluxo real de envio SMTP e de bounce por IMAP não é testável no preview (SMTP/IMAP fictício) — validação final em produção pelo utilizador.
+- **Estrutura hard/soft**: hard bloqueia imediatamente; soft acumula (soft_bounce_count) e bloqueia ao 3.º (SOFT_BLOCK_THRESHOLD).
+
+
 - **Eliminar vários contactos**: checkbox por linha + checkbox "selecionar todos" no cabeçalho; barra de ações ("N selecionado(s)", "Limpar seleção", "Eliminar selecionados") + diálogo de confirmação. Backend: `POST /api/contacts/bulk-delete` ({ids:[...]}) → `delete_many` (400 se lista vazia). Testado via curl (elimina N, 404 depois) + screenshot UI.
 - **Filtro "Sem grupo"**: nova opção no dropdown de grupos (mantém "Todos os grupos" e grupos existentes). Backend: `group_id=none` → `{"group_id": {"$in": [None, ""]}}` (cobre null/inexistente/vazio). Testado via curl.
 - Ficheiros: `frontend/src/pages/Contacts.jsx`, `backend/api.py` (list_contacts, bulk_delete_contacts), `backend/models.py` (BulkDeleteRequest).

@@ -8,12 +8,14 @@ from datetime import datetime, timedelta, timezone
 from bson import ObjectId
 
 from core import db, now_utc, decrypt_secret
+from bounces import is_bounce_candidate, parse_dsn, mark_bounce
 
 logger = logging.getLogger("imap_sync")
 
 
 def _fetch_recent_headers(host, port, username, password, since_days=3):
-    """Blocking IMAP fetch of recent message headers. Returns list of dicts."""
+    """Blocking IMAP fetch of recent messages. Returns list of dicts. Bounce/DSN
+    messages are parsed in full and carry a `bounce_recipients` list."""
     results = []
     imap = imaplib.IMAP4_SSL(host, int(port or 993))
     try:
@@ -33,13 +35,27 @@ def _fetch_recent_headers(host, port, username, password, since_days=3):
             raw = msg_data[0][1]
             msg = email.message_from_bytes(raw)
             from_email = parseaddr(msg.get("From", ""))[1].strip().lower()
+            subject = msg.get("Subject", "")
+
+            # Bounce / DSN — fetch full body and extract failed recipients.
+            if is_bounce_candidate(from_email, subject):
+                bstatus, bdata = imap.fetch(msg_id, "(BODY.PEEK[])")
+                bounce_recipients = []
+                if bstatus == "OK" and bdata and bdata[0]:
+                    bounce_recipients = parse_dsn(bdata[0][1])
+                results.append({
+                    "from_email": from_email, "subject": subject,
+                    "bounce_recipients": bounce_recipients,
+                })
+                continue
+
             in_reply_to = msg.get("In-Reply-To", "") or ""
             references = msg.get("References", "") or ""
             results.append({
                 "from_email": from_email,
                 "in_reply_to": in_reply_to.strip(),
                 "references": references,
-                "subject": msg.get("Subject", ""),
+                "subject": subject,
                 "date": msg.get("Date", ""),
             })
     finally:
@@ -111,6 +127,14 @@ async def sync_account(account: dict) -> int:
 
     found = 0
     for reply in replies:
+        # Bounce / DSN messages: mark each failed recipient and skip reply handling.
+        if reply.get("bounce_recipients") is not None:
+            for r in reply["bounce_recipients"]:
+                await mark_bounce(r["email"], r.get("type") or "hard",
+                                  r.get("reason") or "Bounce", "imap")
+                found += 1
+            continue
+
         contact_id = None
         matched_job_id = None
 

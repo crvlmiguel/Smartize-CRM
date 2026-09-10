@@ -8,6 +8,7 @@ from bson import ObjectId
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from core import db, now_utc
+from bounces import classify_bounce, mark_bounce
 from email_service import (
     build_variable_map, substitute, rewrite_links, inject_open_pixel, send_email, html_to_text,
     compose_email_html, html_has_visible_content, text_to_html,
@@ -179,20 +180,17 @@ async def _send_job(campaign: dict, job: dict, smtp: dict):
         logger.info("Email enviado: job=%s to=%s", str(job["_id"]), job["to_email"])
     except Exception as e:
         err = str(e)
-        low = err.lower()
         attempts = job.get("attempts", 0) + 1
         max_attempts = job.get("max_attempts", 3)
-        permanent = any(k in low for k in [
-            "mailbox", "does not exist", "user unknown", "no such", "recipient address rejected",
-            "550", "551", "553", "5.1.1", "5.1.0", "invalid recipient",
-        ])
-        if permanent:
+        btype, reason = classify_bounce(err)
+        if btype == "hard":
             await db.email_jobs.update_one({"_id": job["_id"]}, {"$set": {
                 "status": "bounced", "error": err, "attempts": attempts,
-                "sent_at": now_utc().isoformat(),
+                "bounce_type": "hard", "sent_at": now_utc().isoformat(),
             }})
-            await db.contacts.update_one({"_id": contact["_id"]}, {"$set": {"status": "bounce"}})
-            logger.warning("Bounce: job=%s to=%s err=%s", str(job["_id"]), job["to_email"], err)
+            await mark_bounce(job["to_email"], "hard", reason or err, "smtp",
+                              campaign_id=str(campaign.get("_id")), job_id=job["_id"])
+            logger.warning("Bounce (hard): job=%s to=%s err=%s", str(job["_id"]), job["to_email"], err)
         elif attempts < max_attempts:
             backoff = timedelta(seconds=60 * attempts)
             await db.email_jobs.update_one({"_id": job["_id"]}, {"$set": {
@@ -202,10 +200,15 @@ async def _send_job(campaign: dict, job: dict, smtp: dict):
             logger.warning("Retry agendado: job=%s attempt=%s err=%s", str(job["_id"]), attempts, err)
         else:
             await db.email_jobs.update_one({"_id": job["_id"]}, {"$set": {
-                "status": "failed", "error": err, "attempts": attempts,
-                "sent_at": now_utc().isoformat(),
+                "status": "bounced" if btype == "soft" else "failed", "error": err,
+                "attempts": attempts, "bounce_type": btype, "sent_at": now_utc().isoformat(),
             }})
-            logger.error("Falha definitiva: job=%s to=%s err=%s", str(job["_id"]), job["to_email"], err)
+            if btype == "soft":
+                await mark_bounce(job["to_email"], "soft", reason or err, "smtp",
+                                  campaign_id=str(campaign.get("_id")), job_id=job["_id"])
+                logger.warning("Bounce (soft): job=%s to=%s err=%s", str(job["_id"]), job["to_email"], err)
+            else:
+                logger.error("Falha definitiva: job=%s to=%s err=%s", str(job["_id"]), job["to_email"], err)
 
 
 async def build_enrollments(campaign: dict, contacts: list) -> int:

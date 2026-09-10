@@ -232,7 +232,13 @@ export default function Contacts() {
                   <TableCell className="font-mono text-xs">{c.email}</TableCell>
                   <TableCell>{c.company || "—"}</TableCell>
                   <TableCell>{groupName(c.group_id)}</TableCell>
-                  <TableCell><StatusBadge status={c.status} /></TableCell>
+                  <TableCell><StatusBadge status={c.status} />
+                    {c.status === "bounce" && c.bounce_reason && (
+                      <div className="text-[10px] text-red-600 mt-0.5 max-w-[180px] truncate" title={c.bounce_reason} data-testid={`bounce-reason-${c.id}`}>
+                        {c.bounce_type === "soft" ? "Soft" : "Hard"}: {c.bounce_reason}
+                      </div>
+                    )}
+                  </TableCell>
                   <TableCell className="text-right">
                     <button onClick={() => createDealFromContact(c)} data-testid={`convert-contact-${c.id}`} title="Criar negócio" className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground hover:text-primary"><Briefcase size={15} /></button>
                     <button onClick={() => openEdit(c)} data-testid={`edit-contact-${c.id}`} className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground"><Pencil size={15} /></button>
