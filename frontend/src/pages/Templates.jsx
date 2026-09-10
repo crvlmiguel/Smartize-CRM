@@ -33,6 +33,62 @@ const NEWSLETTER_SAMPLE = `<div style="max-width:600px;margin:0 auto;font-family
   <p>Com os melhores cumprimentos,<br/>Equipa Smartize</p>
 </div>`;
 
+const NEWSLETTER_MODELS = [
+  {
+    name: "Anúncio",
+    html: `<div style="max-width:600px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;color:#1a1a1a;">
+  <div style="background:#0055FF;padding:28px 32px;border-radius:8px 8px 0 0;">
+    <div style="color:#ffffff;font-size:22px;font-weight:bold;letter-spacing:1px;">SMARTIZE</div>
+  </div>
+  <div style="border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px;padding:32px;">
+    <h1 style="margin:0 0 12px;font-size:24px;color:#0f172a;">Olá {{first_name}}, temos novidades!</h1>
+    <p style="font-size:15px;line-height:1.6;color:#334155;">Escreva aqui o anúncio principal. Explique de forma clara e breve o que está a apresentar e porque é relevante para {{company}}.</p>
+    <p style="text-align:center;margin:32px 0;">
+      <a href="https://smartize.pt" style="background:#0055FF;color:#ffffff;padding:14px 28px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;">Saber mais</a>
+    </p>
+    <p style="font-size:15px;line-height:1.6;color:#334155;">Com os melhores cumprimentos,<br/>Equipa Smartize</p>
+  </div>
+  <p style="text-align:center;font-size:12px;color:#94a3b8;padding:16px;">Smartize · Lisboa, Portugal · <a href="https://smartize.pt" style="color:#94a3b8;">smartize.pt</a></p>
+</div>`,
+  },
+  {
+    name: "Promoção",
+    html: `<div style="max-width:600px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;color:#1a1a1a;">
+  <div style="background:#0f172a;padding:40px 32px;border-radius:8px;text-align:center;">
+    <div style="color:#38bdf8;font-size:13px;letter-spacing:3px;text-transform:uppercase;">Oferta exclusiva</div>
+    <div style="color:#ffffff;font-size:34px;font-weight:bold;margin:10px 0;">-25% este mês</div>
+    <p style="color:#cbd5e1;font-size:15px;margin:0 0 24px;">Caro {{saudacao}} {{first_name}}, aproveite antes que acabe.</p>
+    <a href="https://smartize.pt" style="background:#38bdf8;color:#0f172a;padding:14px 30px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;">Aproveitar agora</a>
+  </div>
+  <p style="text-align:center;font-size:12px;color:#94a3b8;padding:16px;">Smartize · <a href="https://smartize.pt" style="color:#94a3b8;">smartize.pt</a></p>
+</div>`,
+  },
+  {
+    name: "Novidades",
+    html: `<div style="max-width:600px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;color:#1a1a1a;">
+  <div style="padding:24px 0;text-align:center;border-bottom:3px solid #0055FF;">
+    <span style="font-size:20px;font-weight:bold;color:#0055FF;">SMARTIZE</span>
+    <span style="color:#64748b;font-size:13px;"> · Novidades</span>
+  </div>
+  <div style="padding:28px 8px;">
+    <p style="font-size:15px;color:#334155;">Olá {{first_name}}, eis o que há de novo:</p>
+    <div style="border:1px solid #e5e7eb;border-radius:8px;padding:18px;margin:14px 0;">
+      <h3 style="margin:0 0 6px;color:#0f172a;font-size:17px;">Título da novidade 1</h3>
+      <p style="margin:0;font-size:14px;line-height:1.6;color:#475569;">Descrição breve da primeira novidade.</p>
+    </div>
+    <div style="border:1px solid #e5e7eb;border-radius:8px;padding:18px;margin:14px 0;">
+      <h3 style="margin:0 0 6px;color:#0f172a;font-size:17px;">Título da novidade 2</h3>
+      <p style="margin:0;font-size:14px;line-height:1.6;color:#475569;">Descrição breve da segunda novidade.</p>
+    </div>
+    <p style="text-align:center;margin:26px 0;">
+      <a href="https://smartize.pt" style="background:#0055FF;color:#ffffff;padding:12px 26px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;">Ver tudo</a>
+    </p>
+  </div>
+  <p style="text-align:center;font-size:12px;color:#94a3b8;padding:16px;border-top:1px solid #e5e7eb;">Smartize · <a href="https://smartize.pt" style="color:#94a3b8;">smartize.pt</a></p>
+</div>`,
+  },
+];
+
 export default function Templates() {
   const [templates, setTemplates] = useState([]);
   const [open, setOpen] = useState(false);
@@ -134,6 +190,12 @@ export default function Templates() {
       data.success ? toast.success(data.message) : toast.error(data.message);
     } catch (e) { toast.error(apiError(e)); }
     finally { setSending(false); }
+  };
+
+  const applyModel = (html) => {
+    if (form.content_html && form.content_html.trim() && !window.confirm("Substituir o conteúdo HTML atual por este modelo?")) return;
+    setForm((f) => ({ ...f, content_html: html }));
+    toast.success("Modelo aplicado");
   };
 
   const typeLabel = (t) => (t?.type === "html" ? "Newsletter HTML" : "Texto simples");
@@ -249,6 +311,12 @@ export default function Templates() {
                   onChange={(e) => setForm({ ...form, content_html: e.target.value })}
                   className="font-mono text-xs leading-relaxed"
                   placeholder="<div>...o seu HTML...</div>" />
+                <div className="flex flex-wrap items-center gap-2 mt-2" data-testid="newsletter-models">
+                  <span className="text-xs text-muted-foreground">Modelos prontos:</span>
+                  {NEWSLETTER_MODELS.map((m) => (
+                    <Button key={m.name} type="button" variant="outline" size="sm" onClick={() => applyModel(m.html)} data-testid={`newsletter-model-${m.name.toLowerCase()}`}>{m.name}</Button>
+                  ))}
+                </div>
                 <p className="text-xs text-muted-foreground mt-1.5">O HTML é enviado exatamente como criado — estrutura, imagens, estilos e espaçamentos são preservados. Use variáveis como {"{{first_name}}"}, {"{{saudacao}}"}.</p>
               </div>
             ) : (

@@ -40,7 +40,11 @@ Fluxo: SMTP → Contactos → Grupos → Template → Campanha → Enviar/Agenda
 - **P2**: Campos personalizados na UI de contactos; slugs ASCII nos nav-testids.
 - **P3 (futuro)**: IA, SMS/WhatsApp.
 
-## Iteração 20 — Newsletter HTML + Página de Bounces (2026-09-10)
+## Iteração 21 — Modelos de Newsletter prontos (2026-09-10)
+- Adicionados 3 layouts HTML prontos (email-safe, marca Smartize) no editor Newsletter HTML de `Templates.jsx`: **Anúncio** (cabeçalho + intro + botão CTA + rodapé), **Promoção** (banner escuro + oferta + CTA), **Novidades** (lista de itens + CTA + rodapé). Botão por modelo abaixo da textarea (`newsletter-model-<nome>`); aplica o HTML (com confirmação se já houver conteúdo) via `applyModel`. Usam variáveis ({{first_name}}, {{saudacao}}, {{company}}).
+- Testado por screenshot: 3 modelos presentes, "Promoção" aplicado e preview renderiza o layout corretamente.
+
+
 - **Newsletter HTML** (texto simples intacto): templates ganham `type` (plain|html). Editor em `Templates.jsx` com seletor de tipo; modo HTML tem textarea de código, inserir variáveis, **preview inline** (iframe dentro do próprio dialog — evita o anti-pattern de dialogs aninhados) e botão **Enviar teste** (`POST /api/templates/test-send`). Campanhas ganham `type` (normal|newsletter) e o dropdown de template filtra por tipo (`availTemplates`). Backend: `worker.render_email` (helper partilhado por _send_job e _send_sequence_step) — html envia o HTML **exatamente como criado** (sem wrapper, sem assinatura, text/plain derivado); plain mantém compose_email_html + assinatura. `/templates/preview` tem branch type=html (email_html = HTML exato).
 - **Página de Bounces** (`/bounces`, nav novo): tabela com email, contacto, tipo (hard/soft), motivo, origem, campanha, data; pesquisa + filtro por tipo + **exportar CSV** (client-side). Endpoint `GET /api/bounces` (enriquece contact_name/campaign_name).
 - **Testado**: backend 9/9 (test_iter20_newsletter_bounces.py) + iter19 7/7 = 16 verdes; curl (template html CRUD/preview exato, plain preservado); frontend via testing_agent 90% → 1 bug HIGH (preview fechava o editor e perdia dados) CORRIGIDO (preview agora inline) e verificado por screenshot (editor mantém-se aberto + dados preservados).
